@@ -1,0 +1,11 @@
+data:extend({
+  {
+    type = "int-setting",
+    name = "fbp-speed",
+    setting_type = "runtime-per-user",
+    default_value = 30,
+    minimum_value = 1,
+    maximum_value = 600,
+    order = "a"
+  }
+})

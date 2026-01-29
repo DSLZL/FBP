@@ -1,0 +1,8 @@
+{
+  "name": "FBP",
+  "version": "0.1.0",
+  "title": "Factorio Blueprint Printer",
+  "author": "Sisyphus",
+  "factorio_version": "2.0",
+  "description": "Automatically builds ghost entities near the player."
+}
