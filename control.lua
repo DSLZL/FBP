@@ -59,8 +59,9 @@ end
 script.on_event(defines.events.on_player_created, on_player_created)
 
 script.on_event(defines.events.on_player_joined_game, function(event)
-    local player = game.get_player(event.player_index)
-    check_active_permissions(player, event.player_index)
+    for index, player in pairs(game.connected_players) do
+        check_active_permissions(player, index)
+    end
 end)
 
 script.on_event(defines.events.on_player_demoted, function(event)
