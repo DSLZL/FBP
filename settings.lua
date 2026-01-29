@@ -7,5 +7,12 @@ data:extend({
     minimum_value = 1,
     maximum_value = 600,
     order = "a"
+  },
+  {
+    type = "bool-setting",
+    name = "fbp-allow-others",
+    setting_type = "runtime-global",
+    default_value = false,
+    order = "b"
   }
 })
