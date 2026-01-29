@@ -1,3 +1,9 @@
+local function debug_print(player, msg)
+    if settings.get_player_settings(player)["fbp-debug-mode"].value then
+        player.print("[FBP Debug] " .. tostring(msg))
+    end
+end
+
 local function ensure_player_storage(player_index)
     if not storage.players then
         storage.players = {}
@@ -21,6 +27,7 @@ local function check_active_permissions(player, player_index)
     local p_data = storage.players[player_index]
     
     if p_data.active and not is_allowed(player) then
+        debug_print(player, "Permissions denied: admin-only")
         p_data.active = false
         player.set_shortcut_toggled("fbp-toggle", false)
         player.create_local_flying_text({text={"fbp-message.admin-only"}, create_at_cursor=true})
@@ -70,6 +77,7 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
         if not player then return end
         
         if not is_allowed(player) then
+            debug_print(player, "Shortcut toggle denied: admin-only")
             player.create_local_flying_text({text={"fbp-message.admin-only"}, create_at_cursor=true})
             player.set_shortcut_toggled("fbp-toggle", false)
             if storage.players[event.player_index] then
@@ -86,8 +94,10 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
         player.set_shortcut_toggled("fbp-toggle", p_data.active)
         
         if p_data.active then
+            debug_print(player, "Printer activated")
             player.create_local_flying_text({text = "Printer Active", position = player.position})
         else
+            debug_print(player, "Printer deactivated")
             player.create_local_flying_text({text = "Printer Inactive", position = player.position})
         end
     end
@@ -110,10 +120,11 @@ script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
 end)
 
 local function process_player(player, p_data)
-    if not player.character then return end
-
     local inventory = player.get_main_inventory()
-    if not inventory or not inventory.valid then return end
+    if not inventory or not inventory.valid then
+        debug_print(player, "No valid main inventory found")
+        return 
+    end
 
     local ghosts = player.surface.find_entities_filtered{
         type = "entity-ghost",
@@ -121,6 +132,10 @@ local function process_player(player, p_data)
         radius = player.build_distance,
         limit = 5
     }
+
+    if #ghosts == 0 then
+        return
+    end
 
     for _, ghost in pairs(ghosts) do
         if ghost.valid then
@@ -135,8 +150,11 @@ local function process_player(player, p_data)
                         local success, revived_entity = ghost.revive({raise_revive = true})
                         
                         if success then
+                            debug_print(player, "Placed: " .. item_name)
                             inventory.remove({name = item_name, count = count})
                             break
+                        else
+                            debug_print(player, "Failed to revive ghost: " .. item_name)
                         end
                     end
                 end
