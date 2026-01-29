@@ -71,6 +71,29 @@ end)
 script.on_init(on_init)
 script.on_configuration_changed(on_configuration_changed)
 
+commands.add_command("fbp-check", "Diagnostic: Check why printer might not be working", function(cmd)
+    local player = game.get_player(cmd.player_index)
+    if not player or not player.valid then return end
+    
+    player.print("=== FBP Diagnostic Check ===")
+    player.print("Player Name: " .. player.name)
+    player.print("Controller Type ID: " .. tostring(player.controller_type))
+    player.print("Admin Status: " .. tostring(player.admin))
+    player.print("Global 'Allow Others': " .. tostring(settings.global["fbp-allow-others"].value))
+    
+    ensure_player_storage(cmd.player_index)
+    local p_data = storage.players[cmd.player_index]
+    player.print("Active State: " .. tostring(p_data.active))
+    
+    local inventory = player.get_main_inventory()
+    if inventory and inventory.valid then
+        player.print("Inventory Status: Valid")
+    else
+        player.print("Inventory Status: INVALID (nil or invalid)")
+    end
+    player.print("============================")
+end)
+
 script.on_event(defines.events.on_lua_shortcut, function(event)
     if event.prototype_name == "fbp-toggle" then
         local player = game.get_player(event.player_index)
