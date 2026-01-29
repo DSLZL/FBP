@@ -1,0 +1,121 @@
+local function ensure_player_storage(player_index)
+    if not storage.players then
+        storage.players = {}
+    end
+    if not storage.players[player_index] then
+        storage.players[player_index] = {
+            active = false,
+            speed = 1
+        }
+    end
+end
+
+local function on_init()
+    storage.players = {}
+    
+    for index, _ in pairs(game.players) do
+        ensure_player_storage(index)
+    end
+end
+
+local function on_configuration_changed(data)
+    if not storage.players then
+        storage.players = {}
+    end
+    
+    for index, _ in pairs(game.players) do
+        ensure_player_storage(index)
+    end
+end
+
+local function on_player_created(event)
+    ensure_player_storage(event.player_index)
+end
+
+script.on_event(defines.events.on_player_created, on_player_created)
+
+script.on_init(on_init)
+script.on_configuration_changed(on_configuration_changed)
+
+script.on_event(defines.events.on_lua_shortcut, function(event)
+    if event.prototype_name == "fbp-toggle" then
+        local player = game.get_player(event.player_index)
+        if not player then return end
+        
+        ensure_player_storage(event.player_index)
+        
+        local p_data = storage.players[event.player_index]
+        p_data.active = not p_data.active
+        
+        player.set_shortcut_toggled("fbp-toggle", p_data.active)
+        
+        if p_data.active then
+            player.create_local_flying_text({text = "Printer Active", position = player.position})
+        else
+            player.create_local_flying_text({text = "Printer Inactive", position = player.position})
+        end
+    end
+end)
+
+script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
+    if event.setting == "fbp-speed" then
+        local player = game.get_player(event.player_index)
+        if not player then return end
+        
+        ensure_player_storage(event.player_index)
+        
+        local new_speed = settings.get_player_settings(player)["fbp-speed"].value
+        storage.players[event.player_index].speed = new_speed
+    end
+end)
+
+local function process_player(player, p_data)
+    if not player.character then return end
+
+    local inventory = player.get_main_inventory()
+    if not inventory or not inventory.valid then return end
+
+    local ghosts = player.surface.find_entities_filtered{
+        type = "entity-ghost",
+        position = player.position,
+        radius = player.build_distance,
+        limit = 5
+    }
+
+    for _, ghost in pairs(ghosts) do
+        if ghost.valid then
+            local items_to_place = ghost.ghost_prototype.items_to_place_this
+            
+            if items_to_place then
+                for _, item_stack in pairs(items_to_place) do
+                    local item_name = item_stack.name
+                    local count = item_stack.count or 1
+                    
+                    if inventory.get_item_count(item_name) >= count then
+                        local success, revived_entity = ghost.revive({raise_revive = true})
+                        
+                        if success then
+                            inventory.remove({name = item_name, count = count})
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+script.on_event(defines.events.on_tick, function(event)
+    for index, player in pairs(game.connected_players) do
+        local p_data = storage.players[index]
+        
+        if p_data and p_data.active then
+            local speed = p_data.speed or 1
+            if speed < 1 then speed = 1 end
+            
+            if event.tick % speed == 0 then
+                process_player(player, p_data)
+            end
+        end
+    end
+end)
