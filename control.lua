@@ -10,6 +10,23 @@ local function ensure_player_storage(player_index)
     end
 end
 
+local function is_allowed(player)
+    if player.admin then return true end
+    return settings.global["fbp-allow-others"].value
+end
+
+local function check_active_permissions(player, player_index)
+    if not player or not player.valid then return end
+    ensure_player_storage(player_index)
+    local p_data = storage.players[player_index]
+    
+    if p_data.active and not is_allowed(player) then
+        p_data.active = false
+        player.set_shortcut_toggled("fbp-toggle", false)
+        player.create_local_flying_text({text={"fbp-message.admin-only"}, create_at_cursor=true})
+    end
+end
+
 local function on_init()
     storage.players = {}
     
@@ -34,6 +51,16 @@ end
 
 script.on_event(defines.events.on_player_created, on_player_created)
 
+script.on_event(defines.events.on_player_joined_game, function(event)
+    local player = game.get_player(event.player_index)
+    check_active_permissions(player, event.player_index)
+end)
+
+script.on_event(defines.events.on_player_demoted, function(event)
+    local player = game.get_player(event.player_index)
+    check_active_permissions(player, event.player_index)
+end)
+
 script.on_init(on_init)
 script.on_configuration_changed(on_configuration_changed)
 
@@ -41,6 +68,15 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
     if event.prototype_name == "fbp-toggle" then
         local player = game.get_player(event.player_index)
         if not player then return end
+        
+        if not is_allowed(player) then
+            player.create_local_flying_text({text={"fbp-message.admin-only"}, create_at_cursor=true})
+            player.set_shortcut_toggled("fbp-toggle", false)
+            if storage.players[event.player_index] then
+                storage.players[event.player_index].active = false
+            end
+            return
+        end
         
         ensure_player_storage(event.player_index)
         
@@ -66,6 +102,10 @@ script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
         
         local new_speed = settings.get_player_settings(player)["fbp-speed"].value
         storage.players[event.player_index].speed = new_speed
+    elseif event.setting == "fbp-allow-others" then
+        for index, player in pairs(game.players) do
+            check_active_permissions(player, index)
+        end
     end
 end)
 
@@ -109,6 +149,8 @@ script.on_event(defines.events.on_tick, function(event)
     for index, player in pairs(game.connected_players) do
         local p_data = storage.players[index]
         
+        -- Permission check removed from on_tick. Permissions are now event-driven
+        -- via on_player_joined_game, on_player_demoted, and on_runtime_mod_setting_changed.
         if p_data and p_data.active then
             local speed = p_data.speed or 1
             if speed < 1 then speed = 1 end
