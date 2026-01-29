@@ -119,6 +119,12 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
         if p_data.active then
             debug_print(player, "Printer activated")
             player.create_local_flying_text({text = "Printer Active", position = player.position})
+            
+            local inventory = player.get_main_inventory()
+            if not inventory or not inventory.valid then
+                player.print("Printer active but NO INVENTORY found. Switch controller or use God Mode.")
+                player.create_local_flying_text({text = "NO INVENTORY!", position = player.position, color = {1, 0, 0}, create_at_cursor = false})
+            end
         else
             debug_print(player, "Printer deactivated")
             player.create_local_flying_text({text = "Printer Inactive", position = player.position})
