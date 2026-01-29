@@ -2,7 +2,7 @@
   "name": "Factorio_Blueprint_Printer",
   "version": "0.1.1",
   "title": "Factorio Blueprint Printer",
-  "author": "Sisyphus",
+  "author": "DSLZL",
   "factorio_version": "2.0",
   "description": "Automatically builds ghost entities near the player."
 }
