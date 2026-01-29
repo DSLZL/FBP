@@ -149,6 +149,12 @@ script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
     end
 end)
 
+script.on_nth_tick(1800, function()
+    for index, player in pairs(game.connected_players) do
+        check_active_permissions(player, index)
+    end
+end)
+
 local function process_player(player, p_data)
     local inventory = player.get_main_inventory()
     if not inventory or not inventory.valid then
