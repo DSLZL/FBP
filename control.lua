@@ -155,6 +155,40 @@ script.on_nth_tick(1800, function()
     end
 end)
 
+local function process_deconstruction(player)
+    if not settings.get_player_settings(player)["fbp-deconstruct"].value then
+        return
+    end
+
+    local entities = player.surface.find_entities_filtered{
+        position = player.position,
+        radius = player.build_distance,
+        to_be_deconstructed = true,
+        force = player.force,
+        limit = 50
+    }
+
+    for _, entity in pairs(entities) do
+        if entity.valid then
+            player.mine_entity(entity)
+        end
+    end
+
+    local tiles = player.surface.find_tiles_filtered{
+        position = player.position,
+        radius = player.build_distance,
+        to_be_deconstructed = true,
+        force = player.force,
+        limit = 50
+    }
+
+    for _, tile in pairs(tiles) do
+        if tile.valid then
+            player.mine_tile(tile)
+        end
+    end
+end
+
 local function process_player(player, p_data)
     local inventory = player.get_main_inventory()
     if not inventory or not inventory.valid then
@@ -211,6 +245,7 @@ script.on_event(defines.events.on_tick, function(event)
             
             if event.tick % speed == 0 then
                 process_player(player, p_data)
+                process_deconstruction(player)
             end
         end
     end
