@@ -10,16 +10,23 @@ data:extend({
   },
   {
     type = "bool-setting",
+    name = "fbp-deconstruct",
+    setting_type = "runtime-per-user",
+    default_value = false,
+    order = "b"
+  },
+  {
+    type = "bool-setting",
     name = "fbp-allow-others",
     setting_type = "runtime-global",
     default_value = false,
-    order = "b"
+    order = "c"
   },
   {
     type = "bool-setting",
     name = "fbp-debug-mode",
     setting_type = "runtime-per-user",
     default_value = false,
-    order = "c"
+    order = "d"
   }
 })
