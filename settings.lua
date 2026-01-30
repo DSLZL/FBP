@@ -10,6 +10,13 @@ data:extend({
   },
   {
     type = "bool-setting",
+    name = "fbp-batch-mode",
+    setting_type = "runtime-per-user",
+    default_value = true,
+    order = "a-b"
+  },
+  {
+    type = "bool-setting",
     name = "fbp-deconstruct",
     setting_type = "runtime-per-user",
     default_value = false,
