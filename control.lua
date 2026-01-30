@@ -190,11 +190,16 @@ local function process_deconstruction(player)
     local state = player.mining_state
     if state.mining then
         if state.target and state.target.valid then
-            player.update_selected_entity(state.target.position)
+            if state.target.to_be_deconstructed(player.force) then
+                player.update_selected_entity(state.target.position)
+            end
             return
         elseif not state.target and state.position then
             -- Tile mining
-            player.update_selected_entity(state.position)
+            local tile = player.surface.get_tile(state.position)
+            if tile and tile.valid and tile.to_be_deconstructed(player.force) then
+                player.update_selected_entity(state.position)
+            end
             return
         end
     end
