@@ -11,6 +11,7 @@ local function ensure_player_storage(player_index)
     if not storage.players[player_index] then
         storage.players[player_index] = {
             active = false,
+            deconstruct_active = false,
             speed = 1
         }
     end
@@ -26,10 +27,12 @@ local function check_active_permissions(player, player_index)
     ensure_player_storage(player_index)
     local p_data = storage.players[player_index]
     
-    if p_data.active and not is_allowed(player) then
+    if (p_data.active or p_data.deconstruct_active) and not is_allowed(player) then
         debug_print(player, "Permissions denied: admin-only")
         p_data.active = false
+        p_data.deconstruct_active = false
         player.set_shortcut_toggled("fbp-toggle", false)
+        player.set_shortcut_toggled("fbp-deconstruct-toggle", false)
         player.create_local_flying_text({text={"fbp-message.admin-only"}, create_at_cursor=true})
     end
 end
@@ -130,6 +133,33 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
             debug_print(player, "Printer deactivated")
             player.create_local_flying_text({text = {"fbp-message.printer-inactive"}, position = player.position})
         end
+    elseif event.prototype_name == "fbp-deconstruct-toggle" then
+        local player = game.get_player(event.player_index)
+        if not player then return end
+
+        if not is_allowed(player) then
+            debug_print(player, "Shortcut toggle denied: admin-only")
+            player.create_local_flying_text({text={"fbp-message.admin-only"}, create_at_cursor=true})
+            player.set_shortcut_toggled("fbp-deconstruct-toggle", false)
+            if storage.players[event.player_index] then
+                storage.players[event.player_index].deconstruct_active = false
+            end
+            return
+        end
+
+        ensure_player_storage(event.player_index)
+        local p_data = storage.players[event.player_index]
+        p_data.deconstruct_active = not p_data.deconstruct_active
+
+        player.set_shortcut_toggled("fbp-deconstruct-toggle", p_data.deconstruct_active)
+
+        if p_data.deconstruct_active then
+            debug_print(player, "Deconstruction activated")
+            player.create_local_flying_text({text = {"fbp-message.deconstruct-active"}, position = player.position})
+        else
+            debug_print(player, "Deconstruction deactivated")
+            player.create_local_flying_text({text = {"fbp-message.deconstruct-inactive"}, position = player.position})
+        end
     end
 end)
 
@@ -156,10 +186,6 @@ script.on_nth_tick(1800, function()
 end)
 
 local function process_deconstruction(player)
-    if not settings.get_player_settings(player)["fbp-deconstruct"].value then
-        return
-    end
-
     local entities = player.surface.find_entities_filtered{
         position = player.position,
         radius = player.build_distance,
@@ -239,13 +265,18 @@ script.on_event(defines.events.on_tick, function(event)
         
         -- Permission check removed from on_tick. Permissions are now event-driven
         -- via on_player_joined_game, on_player_demoted, and on_runtime_mod_setting_changed.
-        if p_data and p_data.active then
+        if p_data then
             local speed = p_data.speed or 1
             if speed < 1 then speed = 1 end
             
             if event.tick % speed == 0 then
-                process_player(player, p_data)
-                process_deconstruction(player)
+                if p_data.active then
+                    process_player(player, p_data)
+                end
+                
+                if p_data.deconstruct_active then
+                    process_deconstruction(player)
+                end
             end
         end
     end
