@@ -13,7 +13,8 @@ local function ensure_player_storage(player_index)
             active = false,
             deconstruct_active = false,
             speed = 1,
-            placement_acc = 0
+            placement_acc = 0,
+            scan_multiplier = 20
         }
     end
 end
@@ -239,16 +240,25 @@ local function process_player(player, p_data, limit)
         return 
     end
 
+    if not p_data.scan_multiplier then
+        p_data.scan_multiplier = 20
+    end
+
+    local target_limit = limit or 5
+    local scan_limit = target_limit * p_data.scan_multiplier
     local ghosts = player.surface.find_entities_filtered{
         type = "entity-ghost",
         position = player.position,
         radius = player.build_distance,
-        limit = limit or 5
+        limit = scan_limit
     }
 
-    if #ghosts == 0 then
+    local found_ghosts_count = #ghosts
+    if found_ghosts_count == 0 then
         return
     end
+
+    local revived_count = 0
 
     for _, ghost in pairs(ghosts) do
         if ghost.valid then
@@ -265,6 +275,7 @@ local function process_player(player, p_data, limit)
                         if success then
                             debug_print(player, "Placed: " .. item_name)
                             inventory.remove({name = item_name, count = count})
+                            revived_count = revived_count + 1
                             break
                         else
                             debug_print(player, "Failed to revive ghost: " .. item_name)
@@ -273,6 +284,17 @@ local function process_player(player, p_data, limit)
                 end
             end
         end
+        if revived_count >= target_limit then
+            break
+        end
+    end
+
+    if revived_count < target_limit and found_ghosts_count == scan_limit then
+        p_data.scan_multiplier = math.min(p_data.scan_multiplier + 10, 200)
+        debug_print(player, "Scanning ramp-up: " .. p_data.scan_multiplier)
+    else
+        p_data.scan_multiplier = math.max(p_data.scan_multiplier - 5, 5)
+        debug_print(player, "Scanning ramp-down: " .. p_data.scan_multiplier)
     end
 end
 
