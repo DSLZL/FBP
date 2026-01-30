@@ -1,6 +1,6 @@
 local function debug_print(player, msg)
     if settings.get_player_settings(player)["fbp-debug-mode"].value then
-        player.print("[FBP Debug] " .. tostring(msg))
+        player.print({"", "[FBP Debug] ", msg})
     end
 end
 
@@ -30,7 +30,7 @@ local function check_active_permissions(player, player_index)
     local p_data = storage.players[player_index]
     
     if (p_data.active or p_data.deconstruct_active) and not is_allowed(player) then
-        debug_print(player, "Permissions denied: admin-only")
+        debug_print(player, {"fbp-message.admin-only"})
         p_data.active = false
         p_data.deconstruct_active = false
         player.set_shortcut_toggled("fbp-toggle", false)
@@ -77,25 +77,25 @@ end)
 script.on_init(on_init)
 script.on_configuration_changed(on_configuration_changed)
 
-commands.add_command("fbp-check", "Diagnostic: Check why printer might not be working", function(cmd)
+commands.add_command("fbp-check", {"message.diagnostic_command_desc"}, function(cmd)
     local player = game.get_player(cmd.player_index)
     if not player or not player.valid then return end
     
     player.print("=== FBP Diagnostic Check ===")
-    player.print("Player Name: " .. player.name)
-    player.print("Controller Type ID: " .. tostring(player.controller_type))
-    player.print("Admin Status: " .. tostring(player.admin))
-    player.print("Global 'Allow Others': " .. tostring(settings.global["fbp-allow-others"].value))
+    player.print({"message.player_name", player.name})
+    player.print({"message.controller_type", tostring(player.controller_type)})
+    player.print({"message.admin_status", tostring(player.admin)})
+    player.print({"message.allow_others_setting", tostring(settings.global["fbp-allow-others"].value)})
     
     ensure_player_storage(cmd.player_index)
     local p_data = storage.players[cmd.player_index]
-    player.print("Active State: " .. tostring(p_data.active))
+    player.print({"message.active_state", tostring(p_data.active)})
     
     local inventory = player.get_main_inventory()
     if inventory and inventory.valid then
-        player.print("Inventory Status: Valid")
+        player.print({"message.inventory_valid"})
     else
-        player.print("Inventory Status: INVALID (nil or invalid)")
+        player.print({"message.inventory_invalid"})
     end
     player.print("============================")
 end)
@@ -106,7 +106,7 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
         if not player then return end
         
         if not is_allowed(player) then
-            debug_print(player, "Shortcut toggle denied: admin-only")
+            debug_print(player, {"fbp-message.admin-only"})
             player.create_local_flying_text({text={"fbp-message.admin-only"}, create_at_cursor=true})
             player.set_shortcut_toggled("fbp-toggle", false)
             if storage.players[event.player_index] then
@@ -123,7 +123,7 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
         player.set_shortcut_toggled("fbp-toggle", p_data.active)
         
         if p_data.active then
-            debug_print(player, "Printer activated")
+            debug_print(player, {"message.printer_activated"})
             player.create_local_flying_text({text = {"fbp-message.printer-active"}, position = player.position})
             
             local inventory = player.get_main_inventory()
@@ -132,7 +132,7 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
                 player.create_local_flying_text({text = {"fbp-message.no-inventory-flying"}, position = player.position, color = {1, 0, 0}, create_at_cursor = false})
             end
         else
-            debug_print(player, "Printer deactivated")
+            debug_print(player, {"message.printer_deactivated"})
             player.create_local_flying_text({text = {"fbp-message.printer-inactive"}, position = player.position})
         end
     elseif event.prototype_name == "fbp-deconstruct-toggle" then
@@ -140,7 +140,7 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
         if not player then return end
 
         if not is_allowed(player) then
-            debug_print(player, "Shortcut toggle denied: admin-only")
+            debug_print(player, {"fbp-message.admin-only"})
             player.create_local_flying_text({text={"fbp-message.admin-only"}, create_at_cursor=true})
             player.set_shortcut_toggled("fbp-deconstruct-toggle", false)
             if storage.players[event.player_index] then
@@ -156,10 +156,10 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
         player.set_shortcut_toggled("fbp-deconstruct-toggle", p_data.deconstruct_active)
 
         if p_data.deconstruct_active then
-            debug_print(player, "Deconstruction activated")
+            debug_print(player, {"message.deconstruction_activated"})
             player.create_local_flying_text({text = {"fbp-message.deconstruct-active"}, position = player.position})
         else
-            debug_print(player, "Deconstruction deactivated")
+            debug_print(player, {"message.deconstruction_deactivated"})
             player.create_local_flying_text({text = {"fbp-message.deconstruct-inactive"}, position = player.position})
         end
     end
@@ -188,6 +188,9 @@ script.on_nth_tick(1800, function()
 end)
 
 local function process_deconstruction(player)
+    -- Stop auto-mining while walking to prevent camera twitching
+    if player.walking_state.walking then return end
+
     local state = player.mining_state
     if state.mining then
         if state.target and state.target.valid then
@@ -236,7 +239,7 @@ end
 local function process_player(player, p_data, limit)
     local inventory = player.get_main_inventory()
     if not inventory or not inventory.valid then
-        debug_print(player, "No valid main inventory found")
+        debug_print(player, {"message.no_inventory_found"})
         return 
     end
 
@@ -273,12 +276,12 @@ local function process_player(player, p_data, limit)
                         local success, revived_entity = ghost.revive({raise_revive = true})
                         
                         if success then
-                            debug_print(player, "Placed: " .. item_name)
+                            debug_print(player, {"message.placed_item", item_name})
                             inventory.remove({name = item_name, count = count})
                             revived_count = revived_count + 1
                             break
                         else
-                            debug_print(player, "Failed to revive ghost: " .. item_name)
+                            debug_print(player, {"message.failed_to_revive", item_name})
                         end
                     end
                 end
@@ -291,10 +294,10 @@ local function process_player(player, p_data, limit)
 
     if revived_count < target_limit and found_ghosts_count == scan_limit then
         p_data.scan_multiplier = math.min(p_data.scan_multiplier + 10, 200)
-        debug_print(player, "Scanning ramp-up: " .. p_data.scan_multiplier)
+        debug_print(player, {"message.scanning_ramp_up", p_data.scan_multiplier})
     else
         p_data.scan_multiplier = math.max(p_data.scan_multiplier - 5, 5)
-        debug_print(player, "Scanning ramp-down: " .. p_data.scan_multiplier)
+        debug_print(player, {"message.scanning_ramp_down", p_data.scan_multiplier})
     end
 end
 
