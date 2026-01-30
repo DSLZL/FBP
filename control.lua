@@ -12,7 +12,8 @@ local function ensure_player_storage(player_index)
         storage.players[player_index] = {
             active = false,
             deconstruct_active = false,
-            speed = 1
+            speed = 1,
+            placement_acc = 0
         }
     end
 end
@@ -186,36 +187,47 @@ script.on_nth_tick(1800, function()
 end)
 
 local function process_deconstruction(player)
-    local entities = player.surface.find_entities_filtered{
-        position = player.position,
-        radius = player.build_distance,
-        to_be_deconstructed = true,
-        force = player.force,
-        limit = 50
-    }
-
-    for _, entity in pairs(entities) do
-        if entity.valid then
-            player.mine_entity(entity)
+    local state = player.mining_state
+    if state.mining then
+        if state.target and state.target.valid then
+            player.update_selected_entity(state.target.position)
+            return
+        elseif not state.target and state.position then
+            -- Tile mining
+            player.update_selected_entity(state.position)
+            return
         end
     end
 
-    local tiles = player.surface.find_tiles_filtered{
+    local entity = player.surface.find_entities_filtered{
         position = player.position,
         radius = player.build_distance,
         to_be_deconstructed = true,
         force = player.force,
-        limit = 50
-    }
+        limit = 1
+    }[1]
 
-    for _, tile in pairs(tiles) do
-        if tile.valid then
-            player.mine_tile(tile)
-        end
+    if entity then
+        player.update_selected_entity(entity.position)
+        player.mining_state = {mining = true, position = entity.position, target = entity}
+        return
+    end
+
+    local tile = player.surface.find_tiles_filtered{
+        position = player.position,
+        radius = player.build_distance,
+        to_be_deconstructed = true,
+        force = player.force,
+        limit = 1
+    }[1]
+
+    if tile then
+        player.update_selected_entity(tile.position)
+        player.mining_state = {mining = true, position = tile.position}
     end
 end
 
-local function process_player(player, p_data)
+local function process_player(player, p_data, limit)
     local inventory = player.get_main_inventory()
     if not inventory or not inventory.valid then
         debug_print(player, "No valid main inventory found")
@@ -226,7 +238,7 @@ local function process_player(player, p_data)
         type = "entity-ghost",
         position = player.position,
         radius = player.build_distance,
-        limit = 5
+        limit = limit or 5
     }
 
     if #ghosts == 0 then
@@ -269,12 +281,28 @@ script.on_event(defines.events.on_tick, function(event)
             local speed = p_data.speed or 1
             if speed < 1 then speed = 1 end
             
-            if event.tick % speed == 0 then
-                if p_data.active then
-                    process_player(player, p_data)
+            if not p_data.placement_acc then p_data.placement_acc = 0 end
+
+            local batch_mode = settings.get_player_settings(player)["fbp-batch-mode"].value
+            if batch_mode then
+                if event.tick % speed == 0 then
+                    if p_data.active then
+                        process_player(player, p_data, 5)
+                    end
+                    
+                    if p_data.deconstruct_active then
+                        process_deconstruction(player)
+                    end
                 end
+            else
+                p_data.placement_acc = math.min(p_data.placement_acc + (5 / speed), 2.0)
                 
-                if p_data.deconstruct_active then
+                if p_data.active and p_data.placement_acc >= 1 then
+                    process_player(player, p_data, 1)
+                    p_data.placement_acc = p_data.placement_acc - 1
+                end
+
+                if p_data.deconstruct_active and event.tick % speed == 0 then
                     process_deconstruction(player)
                 end
             end
