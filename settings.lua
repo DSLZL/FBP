@@ -17,6 +17,13 @@ data:extend({
   },
   {
     type = "bool-setting",
+    name = "fbp-enable-for-me",
+    setting_type = "runtime-per-user",
+    default_value = true,
+    order = "a-a"
+  },
+  {
+    type = "bool-setting",
     name = "fbp-allow-others",
     setting_type = "runtime-global",
     default_value = false,
