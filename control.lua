@@ -20,8 +20,13 @@ local function ensure_player_storage(player_index)
 end
 
 local function is_allowed(player)
-    if player.admin then return true end
-    return settings.global["fbp-allow-others"].value
+    local player_settings = settings.get_player_settings(player)
+    if not player_settings then return false end
+    
+    local player_enabled = player_settings["fbp-enable-for-me"]
+    if not player_enabled then return false end
+    
+    return player_enabled.value
 end
 
 local function check_active_permissions(player, player_index)
@@ -85,7 +90,13 @@ commands.add_command("fbp-check", {"message.diagnostic_command_desc"}, function(
     player.print({"message.player_name", player.name})
     player.print({"message.controller_type", tostring(player.controller_type)})
     player.print({"message.admin_status", tostring(player.admin)})
-    player.print({"message.allow_others_setting", tostring(settings.global["fbp-allow-others"].value)})
+    
+    local player_settings = settings.get_player_settings(player)
+    if player_settings and player_settings["fbp-enable-for-me"] then
+        player.print({"message.player_enabled_setting", tostring(player_settings["fbp-enable-for-me"].value)})
+    else
+        player.print("Player setting fbp-enable-for-me not found")
+    end
     
     ensure_player_storage(cmd.player_index)
     local p_data = storage.players[cmd.player_index]
@@ -174,10 +185,6 @@ script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
         
         local new_speed = settings.get_player_settings(player)["fbp-speed"].value
         storage.players[event.player_index].speed = new_speed
-    elseif event.setting == "fbp-allow-others" then
-        for index, player in pairs(game.players) do
-            check_active_permissions(player, index)
-        end
     end
 end)
 
