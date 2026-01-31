@@ -193,21 +193,39 @@ local function process_deconstruction(player)
 
     local state = player.mining_state
     if state.mining then
-        if state.target and state.target.valid then
-            if state.target.to_be_deconstructed(player.force) then
-                player.update_selected_entity(state.target.position)
+        -- Entity mining
+        if state.target then
+            if state.target.valid then
+                if state.target.to_be_deconstructed(player.force) then
+                    -- Continue mining current target
+                    player.update_selected_entity(state.target.position)
+                    return
+                else
+                    -- Target no longer marked for deconstruction, stop mining
+                    player.mining_state = {mining = false}
+                    return
+                end
+            else
+                -- Target is invalid (was destroyed), explicitly stop mining
+                player.mining_state = {mining = false}
+                return
             end
-            return
-        elseif not state.target and state.position then
-            -- Tile mining
+        -- Tile mining
+        elseif state.position then
             local tile = player.surface.get_tile(state.position)
             if tile and tile.valid and tile.to_be_deconstructed(player.force) then
+                -- Continue mining current tile
                 player.update_selected_entity(state.position)
+                return
+            else
+                -- Tile no longer needs deconstruction, stop mining
+                player.mining_state = {mining = false}
+                return
             end
-            return
         end
     end
 
+    -- Only search for new targets when explicitly not mining
     local entity = player.surface.find_entities_filtered{
         position = player.position,
         radius = player.build_distance,
