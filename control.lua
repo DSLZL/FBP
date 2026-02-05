@@ -290,6 +290,7 @@ local function process_player(player, p_data, limit)
 
     for _, ghost in pairs(ghosts) do
         if ghost.valid then
+            local required_quality = ghost.quality and ghost.quality.name or "normal"
             local items_to_place = ghost.ghost_prototype.items_to_place_this
             
             if items_to_place then
@@ -297,12 +298,12 @@ local function process_player(player, p_data, limit)
                     local item_name = item_stack.name
                     local count = item_stack.count or 1
                     
-                    if inventory.get_item_count(item_name) >= count then
+                    if inventory.get_item_count({name = item_name, quality = required_quality}) >= count then
                         local success, revived_entity = ghost.revive({raise_revive = true})
                         
                         if success then
                             debug_print(player, {"message.placed_item", item_name})
-                            inventory.remove({name = item_name, count = count})
+                            inventory.remove({name = item_name, quality = required_quality, count = count})
                             revived_count = revived_count + 1
                             break
                         else
