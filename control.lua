@@ -314,6 +314,71 @@ local function process_deconstruction(player)
     end
 end
 
+local function process_upgrades(player, limit)
+    local inventory = player.get_main_inventory()
+    if not inventory or not inventory.valid then return end
+    
+    local target_limit = limit or 5
+    local entities = player.surface.find_entities_filtered{
+        position = player.position,
+        radius = player.build_distance,
+        force = player.force,
+        limit = target_limit * 5
+    }
+    
+    local upgraded_count = 0
+    for _, entity in pairs(entities) do
+        if entity.valid and entity.to_be_upgraded() then
+            local upgrade_target = entity.get_upgrade_target()
+            local upgrade_direction = entity.get_upgrade_direction()
+            
+            if upgrade_target then
+                local target_name = upgrade_target.name
+                local items_needed = upgrade_target.items_to_place_this
+                
+                if items_needed and items_needed[1] then
+                    local item_name = items_needed[1].name
+                    local quality = entity.quality and entity.quality.name or "normal"
+                    
+                    if inventory.get_item_count({name = item_name, quality = quality}) >= 1 then
+                        local position = entity.position
+                        local direction = upgrade_direction or entity.direction
+                        local force = entity.force
+                        
+                        -- 获取旧实体物品用于返还
+                        local old_items = entity.prototype.items_to_place_this
+                        
+                        -- 移除旧实体
+                        entity.destroy()
+                        
+                        -- 放置新实体
+                        local new_entity = player.surface.create_entity{
+                            name = target_name,
+                            position = position,
+                            direction = direction,
+                            force = force,
+                            quality = quality,
+                            raise_built = true
+                        }
+                        
+                        if new_entity then
+                            inventory.remove({name = item_name, quality = quality, count = 1})
+                            upgraded_count = upgraded_count + 1
+                            
+                            -- 返还旧实体物品
+                            if old_items and old_items[1] then
+                                inventory.insert({name = old_items[1].name, quality = quality, count = 1})
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        
+        if upgraded_count >= target_limit then break end
+    end
+end
+
 local function process_player(player, p_data, limit)
     local inventory = player.get_main_inventory()
     if not inventory or not inventory.valid then
@@ -397,6 +462,7 @@ script.on_event(defines.events.on_tick, function(event)
                 if event.tick % speed == 0 then
                     if p_data.active then
                         process_player(player, p_data, 5)
+                        process_upgrades(player, 5)
                     end
                     
                     if p_data.deconstruct_active then
@@ -408,6 +474,7 @@ script.on_event(defines.events.on_tick, function(event)
                 
                 if p_data.active and p_data.placement_acc >= 1 then
                     process_player(player, p_data, 1)
+                    process_upgrades(player, 1)
                     p_data.placement_acc = p_data.placement_acc - 1
                 end
 
