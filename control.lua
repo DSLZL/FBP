@@ -194,6 +194,27 @@ script.on_nth_tick(1800, function()
     end
 end)
 
+local CONTAINER_TYPES = {
+    ["container"] = true,
+    ["logistic-container"] = true,
+    ["infinity-container"] = true,
+    ["linked-container"] = true,
+    ["cargo-wagon"] = true,
+    ["storage-tank"] = true,
+}
+
+local function is_container_type(entity)
+    return CONTAINER_TYPES[entity.type] or false
+end
+
+local function is_inventory_nearly_full(player, threshold)
+    local inventory = player.get_main_inventory()
+    if not inventory or not inventory.valid then return true end
+    local empty = inventory.count_empty_stacks()
+    local total = #inventory
+    return (empty / total) < (1 - threshold)
+end
+
 local function process_deconstruction(player)
     -- Stop auto-mining while walking to prevent camera twitching
     if player.walking_state.walking then return end
@@ -242,6 +263,9 @@ local function process_deconstruction(player)
     }[1]
 
     if entity then
+        if is_container_type(entity) and is_inventory_nearly_full(player, 0.9) then
+            return
+        end
         player.update_selected_entity(entity.position)
         player.mining_state = {mining = true, position = entity.position, target = entity}
         return
