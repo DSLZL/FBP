@@ -283,6 +283,35 @@ local function process_deconstruction(player)
         player.update_selected_entity(tile.position)
         player.mining_state = {mining = true, position = tile.position}
     end
+
+    -- 搜索被标记的地面物品
+    local items_on_ground = player.surface.find_entities_filtered{
+        position = player.position,
+        radius = player.build_distance,
+        type = "item-on-ground",
+        to_be_deconstructed = true,
+        force = player.force,
+        limit = 10
+    }
+
+    local inventory = player.get_main_inventory()
+    if inventory and inventory.valid then
+        for _, item_entity in pairs(items_on_ground) do
+            if item_entity.valid then
+                local stack = item_entity.stack
+                if stack and stack.valid then
+                    local inserted = inventory.insert(stack)
+                    if inserted > 0 then
+                        if inserted >= stack.count then
+                            item_entity.destroy()
+                        else
+                            stack.count = stack.count - inserted
+                        end
+                    end
+                end
+            end
+        end
+    end
 end
 
 local function process_player(player, p_data, limit)
