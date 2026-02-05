@@ -330,7 +330,6 @@ local function process_upgrades(player, limit)
     for _, entity in pairs(entities) do
         if entity.valid and entity.to_be_upgraded() then
             local upgrade_target = entity.get_upgrade_target()
-            local upgrade_direction = entity.get_upgrade_direction()
             
             if upgrade_target then
                 local target_name = upgrade_target.name
@@ -342,7 +341,7 @@ local function process_upgrades(player, limit)
                     
                     if inventory.get_item_count({name = item_name, quality = quality}) >= 1 then
                         local position = entity.position
-                        local direction = upgrade_direction or entity.direction
+                        local direction = entity.direction
                         local force = entity.force
                         
                         -- 获取旧实体物品用于返还
