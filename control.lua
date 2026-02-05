@@ -289,15 +289,13 @@ local function process_deconstruction(player)
         position = player.position,
         radius = player.build_distance,
         type = "item-on-ground",
-        to_be_deconstructed = true,
-        force = player.force,
         limit = 10
     }
 
     local inventory = player.get_main_inventory()
     if inventory and inventory.valid then
         for _, item_entity in pairs(items_on_ground) do
-            if item_entity.valid then
+        if item_entity.valid and item_entity.to_be_deconstructed(player.force) then
                 local stack = item_entity.stack
                 if stack and stack.valid then
                     local inserted = inventory.insert(stack)
