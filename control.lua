@@ -414,11 +414,35 @@ local function process_player(player, p_data, limit)
                     local count = item_stack.count or 1
                     
                     if inventory.get_item_count({name = item_name, quality = required_quality}) >= count then
+                        local module_requests = ghost.item_requests
+                        
                         local success, revived_entity = ghost.revive({raise_revive = true})
                         
                         if success then
                             debug_print(player, {"message.placed_item", item_name})
                             inventory.remove({name = item_name, quality = required_quality, count = count})
+                            
+                            if module_requests and revived_entity and revived_entity.valid then
+                                local module_inventory = revived_entity.get_module_inventory()
+                                if module_inventory then
+                                    for _, module_request in pairs(module_requests) do
+                                        local module_name = module_request.name
+                                        local module_quality = module_request.quality and module_request.quality.name or "normal"
+                                        local module_count = module_request.count or 1
+                                        
+                                        local available = inventory.get_item_count({name = module_name, quality = module_quality})
+                                        local to_insert = math.min(available, module_count)
+                                        
+                                        if to_insert > 0 then
+                                            local inserted = module_inventory.insert({name = module_name, quality = module_quality, count = to_insert})
+                                            if inserted > 0 then
+                                                inventory.remove({name = module_name, quality = module_quality, count = inserted})
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                            
                             revived_count = revived_count + 1
                             break
                         else
