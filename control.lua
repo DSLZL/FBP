@@ -407,12 +407,39 @@ local function process_player(player, p_data, limit)
             local required_quality = ghost.quality and ghost.quality.name or "normal"
             local items_to_place = ghost.ghost_prototype.items_to_place_this
             
-            if items_to_place then
+                if items_to_place then
                 for _, item_stack in pairs(items_to_place) do
                     local item_name = item_stack.name
                     local count = item_stack.count or 1
                     
                     if inventory.get_item_count({name = item_name, quality = required_quality}) >= count then
+                        local bbox = ghost.bounding_box
+                        local surface = ghost.surface
+                        local water_tiles = {}
+                        
+                        for x = math.floor(bbox.left_top.x), math.floor(bbox.right_bottom.x) do
+                            for y = math.floor(bbox.left_top.y), math.floor(bbox.right_bottom.y) do
+                                local tile = surface.get_tile(x, y)
+                                if tile.valid and tile.collides_with("water-tile") then
+                                    table.insert(water_tiles, {x = x, y = y})
+                                end
+                            end
+                        end
+                        
+                        if #water_tiles > 0 then
+                            local landfill_available = inventory.get_item_count({name = "landfill"})
+                            if landfill_available < #water_tiles then
+                                goto continue_ghost
+                            end
+                            
+                            local tiles_to_place = {}
+                            for _, pos in pairs(water_tiles) do
+                                table.insert(tiles_to_place, {name = "landfill", position = {x = pos.x, y = pos.y}})
+                            end
+                            surface.set_tiles(tiles_to_place)
+                            inventory.remove({name = "landfill", count = #water_tiles})
+                        end
+                        
                         local module_requests = ghost.item_requests
                         
                         local success, revived_entity = ghost.revive({raise_revive = true})
@@ -451,6 +478,7 @@ local function process_player(player, p_data, limit)
                 end
             end
         end
+        ::continue_ghost::
         if revived_count >= target_limit then
             break
         end
