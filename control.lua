@@ -320,8 +320,7 @@ local function process_upgrades(player, limit)
     local entities = player.surface.find_entities_filtered{
         position = player.position,
         radius = player.build_distance,
-        force = player.force,
-        limit = target_limit * 5
+        force = player.force
     }
     
     local upgraded_count = 0
