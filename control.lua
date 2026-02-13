@@ -344,6 +344,12 @@ local function process_upgrades(player, limit)
                         -- 获取旧实体物品用于返还
                         local old_items = entity.prototype.items_to_place_this
                         
+                        -- 保存旧实体的 health 比率
+                        local old_health_ratio = 1.0
+                        if entity.health and entity.prototype.max_health and entity.prototype.max_health > 0 then
+                            old_health_ratio = entity.health / entity.prototype.max_health
+                        end
+                        
                         -- 移除旧实体
                         entity.destroy()
                         
@@ -360,6 +366,11 @@ local function process_upgrades(player, limit)
                         if new_entity then
                             inventory.remove({name = item_name, quality = quality, count = 1})
                             upgraded_count = upgraded_count + 1
+                            
+                            -- 恢复新实体的 health
+                            if new_entity.valid and new_entity.prototype.max_health then
+                                new_entity.health = old_health_ratio * new_entity.prototype.max_health
+                            end
                             
                             -- 返还旧实体物品
                             if old_items and old_items[1] then
@@ -442,11 +453,23 @@ local function process_player(player, p_data, limit)
                         
                         local module_requests = ghost.item_requests
                         
+                        -- 在 revive 前获取物品的 health 比率
+                        local item_health_ratio = 1.0
+                        local found_item = inventory.find_item_stack(item_name)
+                        if found_item and found_item.valid and found_item.health then
+                            item_health_ratio = found_item.health
+                        end
+                        
                         local success, revived_entity = ghost.revive({raise_revive = true})
                         
                         if success then
                             debug_print(player, {"message.placed_item", item_name})
                             inventory.remove({name = item_name, quality = required_quality, count = count})
+                            
+                            -- 恢复实体的 health（从物品比率 → 实体绝对值）
+                            if revived_entity and revived_entity.valid and revived_entity.prototype.max_health then
+                                revived_entity.health = item_health_ratio * revived_entity.prototype.max_health
+                            end
                             
                             if module_requests and revived_entity and revived_entity.valid then
                                 local module_inventory = revived_entity.get_module_inventory()
