@@ -11,10 +11,16 @@ local function ensure_player_storage(player_index)
     if not storage.players[player_index] then
         storage.players[player_index] = {
             active = false,
-            deconstruct_active = false,
             speed = 1,
             placement_acc = 0,
-            scan_multiplier = 20
+            scan_multiplier = 20,
+            features = {
+                auto_place = true,
+                auto_upgrade = true,
+                auto_deconstruct = false,
+                auto_modules = true,
+                auto_landfill = true
+            }
         }
     end
 end
@@ -29,17 +35,72 @@ local function is_allowed(player)
     return player_enabled.value
 end
 
+local FEATURE_LABELS = {
+    {key = "auto_place", caption = "Auto Place (Ghost Revival)"},
+    {key = "auto_upgrade", caption = "Auto Upgrade"},
+    {key = "auto_deconstruct", caption = "Auto Deconstruct"},
+    {key = "auto_modules", caption = "Auto Modules"},
+    {key = "auto_landfill", caption = "Auto Landfill"}
+}
+
+local function create_config_gui(player)
+    if player.gui.screen["fbp-config-frame"] then return end
+
+    local player_index = player.index
+    ensure_player_storage(player_index)
+    local p_data = storage.players[player_index]
+
+    local frame = player.gui.screen.add{
+        type = "frame",
+        name = "fbp-config-frame",
+        caption = "FBP Configuration",
+        direction = "vertical"
+    }
+    frame.auto_center = true
+
+    frame.add{
+        type = "button",
+        name = "fbp-config-close",
+        caption = "Close"
+    }
+
+    for _, feat in pairs(FEATURE_LABELS) do
+        frame.add{
+            type = "checkbox",
+            name = "fbp-feature-" .. feat.key,
+            caption = feat.caption,
+            state = p_data.features[feat.key] or false
+        }
+    end
+end
+
+local function destroy_config_gui(player)
+    local frame = player.gui.screen["fbp-config-frame"]
+    if frame then
+        frame.destroy()
+    end
+end
+
+local function toggle_config_gui(event)
+    local player = game.get_player(event.player_index)
+    if not player then return end
+
+    if player.gui.screen["fbp-config-frame"] then
+        destroy_config_gui(player)
+    else
+        create_config_gui(player)
+    end
+end
+
 local function check_active_permissions(player, player_index)
     if not player or not player.valid then return end
     ensure_player_storage(player_index)
     local p_data = storage.players[player_index]
     
-    if (p_data.active or p_data.deconstruct_active) and not is_allowed(player) then
+    if p_data.active and not is_allowed(player) then
         debug_print(player, {"fbp-message.admin-only"})
         p_data.active = false
-        p_data.deconstruct_active = false
         player.set_shortcut_toggled("fbp-toggle", false)
-        player.set_shortcut_toggled("fbp-deconstruct-toggle", false)
         player.create_local_flying_text({text={"fbp-message.admin-only"}, create_at_cursor=true})
     end
 end
@@ -59,6 +120,24 @@ local function on_configuration_changed(data)
     
     for index, _ in pairs(game.players) do
         ensure_player_storage(index)
+        local p_data = storage.players[index]
+
+        -- Migrate: add features table if missing
+        if not p_data.features then
+            p_data.features = {
+                auto_place = true,
+                auto_upgrade = true,
+                auto_deconstruct = false,
+                auto_modules = true,
+                auto_landfill = true
+            }
+        end
+
+        -- Migrate: deconstruct_active → features.auto_deconstruct
+        if p_data.deconstruct_active ~= nil then
+            p_data.features.auto_deconstruct = p_data.deconstruct_active
+            p_data.deconstruct_active = nil
+        end
     end
 end
 
@@ -81,6 +160,36 @@ end)
 
 script.on_init(on_init)
 script.on_configuration_changed(on_configuration_changed)
+
+script.on_event("fbp-open-config", toggle_config_gui)
+
+script.on_event(defines.events.on_gui_checked_state_changed, function(event)
+    local element = event.element
+    if not element or not element.valid then return end
+    if not element.name or not element.name:find("^fbp%-feature%-") then return end
+
+    local player = game.get_player(event.player_index)
+    if not player then return end
+
+    ensure_player_storage(event.player_index)
+    local p_data = storage.players[event.player_index]
+
+    local feature_key = element.name:gsub("^fbp%-feature%-", "")
+    if p_data.features[feature_key] ~= nil then
+        p_data.features[feature_key] = element.state
+    end
+end)
+
+script.on_event(defines.events.on_gui_click, function(event)
+    local element = event.element
+    if not element or not element.valid then return end
+    if element.name == "fbp-config-close" then
+        local player = game.get_player(event.player_index)
+        if player then
+            destroy_config_gui(player)
+        end
+    end
+end)
 
 commands.add_command("fbp-check", {"message.diagnostic_command_desc"}, function(cmd)
     local player = game.get_player(cmd.player_index)
@@ -145,33 +254,6 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
         else
             debug_print(player, {"message.printer_deactivated"})
             player.create_local_flying_text({text = {"fbp-message.printer-inactive"}, position = player.position})
-        end
-    elseif event.prototype_name == "fbp-deconstruct-toggle" then
-        local player = game.get_player(event.player_index)
-        if not player then return end
-
-        if not is_allowed(player) then
-            debug_print(player, {"fbp-message.admin-only"})
-            player.create_local_flying_text({text={"fbp-message.admin-only"}, create_at_cursor=true})
-            player.set_shortcut_toggled("fbp-deconstruct-toggle", false)
-            if storage.players[event.player_index] then
-                storage.players[event.player_index].deconstruct_active = false
-            end
-            return
-        end
-
-        ensure_player_storage(event.player_index)
-        local p_data = storage.players[event.player_index]
-        p_data.deconstruct_active = not p_data.deconstruct_active
-
-        player.set_shortcut_toggled("fbp-deconstruct-toggle", p_data.deconstruct_active)
-
-        if p_data.deconstruct_active then
-            debug_print(player, {"message.deconstruction_activated"})
-            player.create_local_flying_text({text = {"fbp-message.deconstruct-active"}, position = player.position})
-        else
-            debug_print(player, {"message.deconstruction_deactivated"})
-            player.create_local_flying_text({text = {"fbp-message.deconstruct-inactive"}, position = player.position})
         end
     end
 end)
@@ -522,34 +604,40 @@ script.on_event(defines.events.on_tick, function(event)
         
         -- Permission check removed from on_tick. Permissions are now event-driven
         -- via on_player_joined_game, on_player_demoted, and on_runtime_mod_setting_changed.
-        if p_data then
+        if p_data and p_data.active then
             local speed = p_data.speed or 1
             if speed < 1 then speed = 1 end
             
             if not p_data.placement_acc then p_data.placement_acc = 0 end
+            if not p_data.features then p_data.features = {} end
 
             local batch_mode = settings.get_player_settings(player)["fbp-batch-mode"].value
             if batch_mode then
                 if event.tick % speed == 0 then
-                    if p_data.active then
+                    if p_data.features.auto_place then
                         process_player(player, p_data, 5)
+                    end
+                    if p_data.features.auto_upgrade then
                         process_upgrades(player, 5)
                     end
-                    
-                    if p_data.deconstruct_active then
+                    if p_data.features.auto_deconstruct then
                         process_deconstruction(player)
                     end
                 end
             else
                 p_data.placement_acc = math.min(p_data.placement_acc + (5 / speed), 2.0)
                 
-                if p_data.active and p_data.placement_acc >= 1 then
-                    process_player(player, p_data, 1)
-                    process_upgrades(player, 1)
+                if p_data.placement_acc >= 1 then
+                    if p_data.features.auto_place then
+                        process_player(player, p_data, 1)
+                    end
+                    if p_data.features.auto_upgrade then
+                        process_upgrades(player, 1)
+                    end
                     p_data.placement_acc = p_data.placement_acc - 1
                 end
 
-                if p_data.deconstruct_active and event.tick % speed == 0 then
+                if p_data.features.auto_deconstruct and event.tick % speed == 0 then
                     process_deconstruction(player)
                 end
             end
