@@ -520,6 +520,10 @@ local function process_player(player, p_data, limit)
                         end
                         
                         if #water_tiles > 0 then
+                            if not p_data.features.auto_landfill then
+                                goto continue_ghost
+                            end
+                            
                             local landfill_available = inventory.get_item_count({name = "landfill"})
                             if landfill_available < #water_tiles then
                                 goto continue_ghost
@@ -553,7 +557,7 @@ local function process_player(player, p_data, limit)
                                 revived_entity.health = item_health_ratio * revived_entity.prototype.max_health
                             end
                             
-                            if module_requests and revived_entity and revived_entity.valid then
+                            if module_requests and revived_entity and revived_entity.valid and p_data.features.auto_modules then
                                 local module_inventory = revived_entity.get_module_inventory()
                                 if module_inventory then
                                     for _, module_request in pairs(module_requests) do
