@@ -27,12 +27,22 @@ end
 
 local function is_allowed(player)
     local player_settings = settings.get_player_settings(player)
-    if not player_settings then return false end
+    if not player_settings then return false, "unknown-error" end
     
-    local player_enabled = player_settings["fbp-enable-for-me"]
-    if not player_enabled then return false end
+    -- 1. Check user personal setting first
+    if player_settings["fbp-enable-for-me"] and not player_settings["fbp-enable-for-me"].value then
+        return false, "disabled-by-user"
+    end
     
-    return player_enabled.value
+    -- 2. Admin is always allowed (unless disabled by self above)
+    if player.admin then return true end
+    
+    -- 3. Check global setting for non-admins
+    if settings.global["fbp-allow-others"] and settings.global["fbp-allow-others"].value then
+        return true
+    end
+    
+    return false, "admin-only"
 end
 
 local FEATURE_LABELS = {
@@ -97,11 +107,14 @@ local function check_active_permissions(player, player_index)
     ensure_player_storage(player_index)
     local p_data = storage.players[player_index]
     
-    if p_data.active and not is_allowed(player) then
-        debug_print(player, {"fbp-message.admin-only"})
+    local allowed, reason = is_allowed(player)
+    
+    if p_data.active and not allowed then
+        local msg_key = "fbp-message." .. (reason or "admin-only")
+        debug_print(player, {msg_key})
         p_data.active = false
         player.set_shortcut_toggled("fbp-toggle", false)
-        player.create_local_flying_text({text={"fbp-message.admin-only"}, create_at_cursor=true})
+        player.create_local_flying_text({text={msg_key}, create_at_cursor=true})
     end
 end
 
@@ -225,9 +238,11 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
         local player = game.get_player(event.player_index)
         if not player then return end
         
-        if not is_allowed(player) then
-            debug_print(player, {"fbp-message.admin-only"})
-            player.create_local_flying_text({text={"fbp-message.admin-only"}, create_at_cursor=true})
+        local allowed, reason = is_allowed(player)
+        if not allowed then
+            local msg_key = "fbp-message." .. (reason or "admin-only")
+            debug_print(player, {msg_key})
+            player.create_local_flying_text({text={msg_key}, create_at_cursor=true})
             player.set_shortcut_toggled("fbp-toggle", false)
             if storage.players[event.player_index] then
                 storage.players[event.player_index].active = false
