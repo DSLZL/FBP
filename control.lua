@@ -486,45 +486,20 @@ local function process_upgrades(player, limit)
                     local quality = entity.quality and entity.quality.name or "normal"
                     
                     if inventory.get_item_count({name = item_name, quality = quality}) >= 1 then
-                        local position = entity.position
-                        local direction = entity.direction
-                        local force = entity.force
-                        
-                        -- 获取旧实体物品用于返还
-                        local old_items = entity.prototype.items_to_place_this
-                        
-                        -- 保存旧实体的 health 比率
-                        local old_health_ratio = 1.0
-                        if entity.health and entity.prototype.max_health and entity.prototype.max_health > 0 then
-                            old_health_ratio = entity.health / entity.prototype.max_health
-                        end
-                        
-                        -- 移除旧实体
-                        entity.destroy()
-                        
-                        -- 放置新实体
                         local new_entity = player.surface.create_entity{
                             name = target_name,
-                            position = position,
-                            direction = direction,
-                            force = force,
+                            position = entity.position,
+                            direction = entity.direction,
+                            force = entity.force,
                             quality = quality,
+                            fast_replace = true,
+                            player = player,
                             raise_built = true
                         }
                         
                         if new_entity then
                             inventory.remove({name = item_name, quality = quality, count = 1})
                             upgraded_count = upgraded_count + 1
-                            
-                            -- 恢复新实体的 health
-                            if new_entity.valid and new_entity.prototype.max_health then
-                                new_entity.health = old_health_ratio * new_entity.prototype.max_health
-                            end
-                            
-                            -- 返还旧实体物品
-                            if old_items and old_items[1] then
-                                inventory.insert({name = old_items[1].name, quality = quality, count = 1})
-                            end
                         end
                     end
                 end
