@@ -4,7 +4,7 @@ local function debug_print(player, msg)
     end
 end
 
-local MAX_RADIUS = 100
+local MAX_RADIUS = 100 -- Default fallback, overridden by settings
 
 local function ensure_player_storage(player_index)
     if not storage.players then
@@ -16,6 +16,7 @@ local function ensure_player_storage(player_index)
             speed = 1,
             placement_acc = 0,
             scan_multiplier = 20,
+            scan_radius = 100,
             features = {
                 auto_place = true,
                 auto_upgrade = true,
@@ -161,11 +162,25 @@ local function on_configuration_changed(data)
             p_data.features.auto_deconstruct = p_data.deconstruct_active
             p_data.deconstruct_active = nil
         end
+        
+        -- Migrate: ensure scan_radius exists
+        if p_data.scan_radius == nil then
+            local player = game.get_player(index)
+            if player and player.valid then
+                p_data.scan_radius = settings.get_player_settings(player)["fbp-scan-radius"].value
+            else
+                p_data.scan_radius = MAX_RADIUS
+            end
+        end
     end
 end
 
 local function on_player_created(event)
     ensure_player_storage(event.player_index)
+    local player = game.get_player(event.player_index)
+    if player and player.valid then
+        storage.players[event.player_index].scan_radius = settings.get_player_settings(player)["fbp-scan-radius"].value
+    end
 end
 
 script.on_event(defines.events.on_player_created, on_player_created)
@@ -292,6 +307,13 @@ script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
         
         local new_speed = settings.get_player_settings(player)["fbp-speed"].value
         storage.players[event.player_index].speed = new_speed
+    elseif event.setting == "fbp-scan-radius" then
+        local player = game.get_player(event.player_index)
+        if not player then return end
+
+        ensure_player_storage(event.player_index)
+        local new_radius = settings.get_player_settings(player)["fbp-scan-radius"].value
+        storage.players[event.player_index].scan_radius = new_radius
     end
 end)
 
@@ -326,6 +348,7 @@ local function process_deconstruction(player)
     -- Stop auto-mining while walking to prevent camera twitching
     if player.walking_state.walking then return end
 
+    local max_radius = settings.get_player_settings(player)["fbp-scan-radius"].value
     local state = player.mining_state
     if state.mining then
         -- Entity mining
@@ -363,7 +386,7 @@ local function process_deconstruction(player)
     -- Only search for new targets when explicitly not mining
     local entity = player.surface.find_entities_filtered{
         position = player.position,
-        radius = math.min(player.build_distance, MAX_RADIUS),
+        radius = math.min(player.build_distance, max_radius),
         to_be_deconstructed = true,
         force = player.force,
         limit = 1
@@ -384,7 +407,7 @@ local function process_deconstruction(player)
     if p_data.features.auto_mine then
         local neutral_target = player.surface.find_entities_filtered{
             position = player.position,
-            radius = math.min(player.build_distance, MAX_RADIUS),
+            radius = math.min(player.build_distance, max_radius),
             type = {"tree", "simple-entity"},
             limit = 1
         }[1]
@@ -398,7 +421,7 @@ local function process_deconstruction(player)
 
     local tile = player.surface.find_tiles_filtered{
         position = player.position,
-        radius = math.min(player.build_distance, MAX_RADIUS),
+        radius = math.min(player.build_distance, max_radius),
         to_be_deconstructed = true,
         force = player.force,
         limit = 1
@@ -412,7 +435,7 @@ local function process_deconstruction(player)
     -- 搜索被标记的地面物品
     local items_on_ground = player.surface.find_entities_filtered{
         position = player.position,
-        radius = math.min(player.build_distance, MAX_RADIUS),
+        radius = math.min(player.build_distance, max_radius),
         type = "item-on-ground",
         limit = 10
     }
@@ -441,10 +464,11 @@ local function process_upgrades(player, limit)
     local inventory = player.get_main_inventory()
     if not inventory or not inventory.valid then return end
     
+    local max_radius = settings.get_player_settings(player)["fbp-scan-radius"].value
     local target_limit = limit or 5
     local entities = player.surface.find_entities_filtered{
         position = player.position,
-        radius = math.min(player.build_distance, MAX_RADIUS),
+        radius = math.min(player.build_distance, max_radius),
         force = player.force
     }
     
@@ -524,10 +548,11 @@ local function process_player(player, p_data, limit)
 
     local target_limit = limit or 5
     local scan_limit = target_limit * p_data.scan_multiplier
+    local max_radius = settings.get_player_settings(player)["fbp-scan-radius"].value
     local ghosts = player.surface.find_entities_filtered{
         type = "entity-ghost",
         position = player.position,
-        radius = math.min(player.build_distance, MAX_RADIUS),
+        radius = math.min(player.build_distance, max_radius),
         limit = scan_limit
     }
 

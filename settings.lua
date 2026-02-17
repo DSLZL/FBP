@@ -9,6 +9,15 @@ data:extend({
     order = "a"
   },
   {
+    type = "int-setting",
+    name = "fbp-scan-radius",
+    setting_type = "runtime-per-user",
+    default_value = 100,
+    minimum_value = 10,
+    maximum_value = 500,
+    order = "a-a"
+  },
+  {
     type = "bool-setting",
     name = "fbp-batch-mode",
     setting_type = "runtime-per-user",
