@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.0 (2026-02-17)
+### ♻️ Refactor
+- **Codebase Restructuring**: Major refactor of `control.lua`. The monolithic file has been split into modular components in the `scripts/` directory for better maintainability and extensibility.
+- **Performance Optimization**: Optimized entity search and tick processing logic to reduce UPS impact.
+
+## 0.1.12 (2026-02-17)
+### 🐛 修复
+- **API 兼容性**: 修复了 Factorio 2.0 中 `LuaEntityPrototype` 移除 `max_health` 属性导致的崩溃问题 (现已替换为 `LuaEntity.max_health`)。
+
+## 0.1.11 (2026-02-17)
+### 🐛 修复
+- **Collision Layer**: 修复了 Factorio 2.0 中 `water-tile` 碰撞层名称变更导致的 "Unknown collision-layer name" 错误 (现已更正为 `water_tile`)。
+
 ## 0.1.10 (2026-02-17)
 ### ✨ 新功能
 - **高级调试模式**: 将调试模式开关升级为多选项设置。
