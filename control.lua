@@ -18,6 +18,7 @@ local function ensure_player_storage(player_index)
                 auto_place = true,
                 auto_upgrade = true,
                 auto_deconstruct = false,
+                auto_mine = false,
                 auto_modules = true,
                 auto_landfill = true
             }
@@ -46,11 +47,12 @@ local function is_allowed(player)
 end
 
 local FEATURE_LABELS = {
-    {key = "auto_place", caption = "Auto Place (Ghost Revival)"},
-    {key = "auto_upgrade", caption = "Auto Upgrade"},
-    {key = "auto_deconstruct", caption = "Auto Deconstruct"},
-    {key = "auto_modules", caption = "Auto Modules"},
-    {key = "auto_landfill", caption = "Auto Landfill"}
+    {key = "auto_place", caption = {"fbp-gui.auto-place"}},
+    {key = "auto_upgrade", caption = {"fbp-gui.auto-upgrade"}},
+    {key = "auto_deconstruct", caption = {"fbp-gui.auto-deconstruct"}},
+    {key = "auto_mine", caption = {"fbp-gui.auto-mine"}},
+    {key = "auto_modules", caption = {"fbp-gui.auto-modules"}},
+    {key = "auto_landfill", caption = {"fbp-gui.auto-landfill"}}
 }
 
 local function create_config_gui(player)
@@ -141,9 +143,15 @@ local function on_configuration_changed(data)
                 auto_place = true,
                 auto_upgrade = true,
                 auto_deconstruct = false,
+                auto_mine = false,
                 auto_modules = true,
                 auto_landfill = true
             }
+        end
+        
+        -- Migrate: ensure auto_mine exists
+        if p_data.features.auto_mine == nil then
+            p_data.features.auto_mine = false
         end
 
         -- Migrate: deconstruct_active → features.auto_deconstruct
@@ -366,6 +374,24 @@ local function process_deconstruction(player)
         player.update_selected_entity(entity.position)
         player.mining_state = {mining = true, position = entity.position, target = entity}
         return
+    end
+
+    -- Process Auto Mine (Trees/Rocks) if enabled
+    ensure_player_storage(player.index)
+    local p_data = storage.players[player.index]
+    if p_data.features.auto_mine then
+        local neutral_target = player.surface.find_entities_filtered{
+            position = player.position,
+            radius = player.build_distance,
+            type = {"tree", "simple-entity"},
+            limit = 1
+        }[1]
+        
+        if neutral_target and neutral_target.valid and neutral_target.to_be_deconstructed(player.force) then
+             player.update_selected_entity(neutral_target.position)
+             player.mining_state = {mining = true, position = neutral_target.position, target = neutral_target}
+             return
+        end
     end
 
     local tile = player.surface.find_tiles_filtered{
@@ -639,7 +665,7 @@ script.on_event(defines.events.on_tick, function(event)
                     if p_data.features.auto_upgrade then
                         process_upgrades(player, 5)
                     end
-                    if p_data.features.auto_deconstruct then
+                    if p_data.features.auto_deconstruct or p_data.features.auto_mine then
                         process_deconstruction(player)
                     end
                 end
@@ -656,7 +682,7 @@ script.on_event(defines.events.on_tick, function(event)
                     p_data.placement_acc = p_data.placement_acc - 1
                 end
 
-                if p_data.features.auto_deconstruct and event.tick % speed == 0 then
+                if (p_data.features.auto_deconstruct or p_data.features.auto_mine) and event.tick % speed == 0 then
                     process_deconstruction(player)
                 end
             end
