@@ -1,138 +1,29 @@
-local function debug_print(source_player, msg)
-    for _, p in pairs(game.connected_players) do
-        local debug_setting = settings.get_player_settings(p)["fbp-debug-mode"].value
-        if debug_setting == "all" then
-            p.print({"", "[FBP Debug] (" .. source_player.name .. ") ", msg})
-        elseif debug_setting == "personal" and p.index == source_player.index then
-            p.print({"", "[FBP Debug] ", msg})
-        end
-    end
+local utils = require("scripts.utils")
+local gui = require("scripts.gui")
+local core = require("scripts.core")
+
+local function debug_print(player, msg)
+    utils.debug_print(player, msg)
 end
 
-local MAX_RADIUS = 100 -- Default fallback, overridden by settings
-
-local function ensure_player_storage(player_index)
-    if not storage.players then
-        storage.players = {}
-    end
-    if not storage.players[player_index] then
-        storage.players[player_index] = {
-            active = false,
-            speed = 1,
-            placement_acc = 0,
-            scan_multiplier = 20,
-            scan_radius = 100,
-            features = {
-                auto_place = true,
-                auto_upgrade = true,
-                auto_deconstruct = false,
-                auto_mine = false,
-                auto_modules = true,
-                auto_landfill = true
-            }
-        }
-    end
+local function ensure_player_storage(index)
+    utils.ensure_player_storage(index)
 end
 
-local function is_allowed(player)
-    local player_settings = settings.get_player_settings(player)
-    if not player_settings then return false, "unknown-error" end
-    
-    -- 1. Check user personal setting first
-    if player_settings["fbp-enable-for-me"] and not player_settings["fbp-enable-for-me"].value then
-        return false, "disabled-by-user"
-    end
-    
-    -- 2. Admin is always allowed (unless disabled by self above)
-    if player.admin then return true end
-    
-    -- 3. Check global setting for non-admins
-    if settings.global["fbp-allow-others"] and settings.global["fbp-allow-others"].value then
-        return true
-    end
-    
-    return false, "admin-only"
-end
-
-local FEATURE_LABELS = {
-    {key = "auto_place", caption = {"fbp-gui.auto-place"}},
-    {key = "auto_upgrade", caption = {"fbp-gui.auto-upgrade"}},
-    {key = "auto_deconstruct", caption = {"fbp-gui.auto-deconstruct"}},
-    {key = "auto_mine", caption = {"fbp-gui.auto-mine"}},
-    {key = "auto_modules", caption = {"fbp-gui.auto-modules"}},
-    {key = "auto_landfill", caption = {"fbp-gui.auto-landfill"}}
-}
-
-local function create_config_gui(player)
-    if player.gui.screen["fbp-config-frame"] then return end
-
-    local player_index = player.index
-    ensure_player_storage(player_index)
-    local p_data = storage.players[player_index]
-
-    local frame = player.gui.screen.add{
-        type = "frame",
-        name = "fbp-config-frame",
-        caption = "FBP Configuration",
-        direction = "vertical"
-    }
-    frame.auto_center = true
-
-    frame.add{
-        type = "button",
-        name = "fbp-config-close",
-        caption = "Close"
-    }
-
-    for _, feat in pairs(FEATURE_LABELS) do
-        frame.add{
-            type = "checkbox",
-            name = "fbp-feature-" .. feat.key,
-            caption = feat.caption,
-            state = p_data.features[feat.key] or false
-        }
-    end
-end
-
-local function destroy_config_gui(player)
-    local frame = player.gui.screen["fbp-config-frame"]
-    if frame then
-        frame.destroy()
-    end
-end
-
-local function toggle_config_gui(event)
-    local player = game.get_player(event.player_index)
-    if not player then return end
-
-    if player.gui.screen["fbp-config-frame"] then
-        destroy_config_gui(player)
-    else
-        create_config_gui(player)
-    end
-end
-
-local function check_active_permissions(player, player_index)
-    if not player or not player.valid then return end
-    ensure_player_storage(player_index)
-    local p_data = storage.players[player_index]
-    
-    local allowed, reason = is_allowed(player)
-    
-    if p_data.active and not allowed then
-        local msg_key = "fbp-message." .. (reason or "admin-only")
-        debug_print(player, {msg_key})
-        p_data.active = false
-        player.set_shortcut_toggled("fbp-toggle", false)
-        player.create_local_flying_text({text={msg_key}, create_at_cursor=true})
-    end
+local function check_active_permissions(player, index)
+    core.check_active_permissions(player, index)
 end
 
 local function on_init()
     storage.players = {}
-    
-    for index, _ in pairs(game.players) do
+    for index, player in pairs(game.players) do
         ensure_player_storage(index)
+        local p_data = storage.players[index]
+        if player.valid then
+            local settings_obj = settings.get_player_settings(player)
+            p_data.scan_radius = settings_obj["fbp-scan-radius"].value
+            p_data.speed = settings_obj["fbp-speed"].value
+        end
     end
 end
 
@@ -141,11 +32,10 @@ local function on_configuration_changed(data)
         storage.players = {}
     end
     
-    for index, _ in pairs(game.players) do
+    for index, player in pairs(game.players) do
         ensure_player_storage(index)
         local p_data = storage.players[index]
 
-        -- Migrate: add features table if missing
         if not p_data.features then
             p_data.features = {
                 auto_place = true,
@@ -157,25 +47,19 @@ local function on_configuration_changed(data)
             }
         end
         
-        -- Migrate: ensure auto_mine exists
         if p_data.features.auto_mine == nil then
             p_data.features.auto_mine = false
         end
 
-        -- Migrate: deconstruct_active → features.auto_deconstruct
         if p_data.deconstruct_active ~= nil then
             p_data.features.auto_deconstruct = p_data.deconstruct_active
             p_data.deconstruct_active = nil
         end
         
-        -- Migrate: ensure scan_radius exists
-        if p_data.scan_radius == nil then
-            local player = game.get_player(index)
-            if player and player.valid then
-                p_data.scan_radius = settings.get_player_settings(player)["fbp-scan-radius"].value
-            else
-                p_data.scan_radius = MAX_RADIUS
-            end
+        if player.valid then
+            local settings_obj = settings.get_player_settings(player)
+            p_data.scan_radius = settings_obj["fbp-scan-radius"].value
+            p_data.speed = settings_obj["fbp-speed"].value
         end
     end
 end
@@ -184,15 +68,61 @@ local function on_player_created(event)
     ensure_player_storage(event.player_index)
     local player = game.get_player(event.player_index)
     if player and player.valid then
-        storage.players[event.player_index].scan_radius = settings.get_player_settings(player)["fbp-scan-radius"].value
+        local p_data = storage.players[event.player_index]
+        local settings_obj = settings.get_player_settings(player)
+        p_data.scan_radius = settings_obj["fbp-scan-radius"].value
+        p_data.speed = settings_obj["fbp-speed"].value
     end
 end
 
-script.on_event(defines.events.on_player_created, on_player_created)
+local function on_player_joined_game(event)
+    local player = game.get_player(event.player_index)
+    check_active_permissions(player, event.player_index)
+    
+    if player and player.valid then
+        ensure_player_storage(event.player_index)
+        local p_data = storage.players[event.player_index]
+        local settings_obj = settings.get_player_settings(player)
+        p_data.scan_radius = settings_obj["fbp-scan-radius"].value
+        p_data.speed = settings_obj["fbp-speed"].value
+    end
+end
 
-script.on_event(defines.events.on_player_joined_game, function(event)
+local function on_tick(event)
     for index, player in pairs(game.connected_players) do
-        check_active_permissions(player, index)
+        local p_data = storage.players[index]
+        if p_data and p_data.active then
+            local speed = p_data.speed or 1
+            if speed < 1 then speed = 1 end
+            
+            -- Staggered check: Distribute load across ticks based on player index
+            if (event.tick + index) % speed == 0 then
+                if p_data.features.auto_place then
+                    core.process_auto_place(player, p_data, 5)
+                end
+                if p_data.features.auto_upgrade then
+                    core.process_upgrades(player, 5)
+                end
+                if p_data.features.auto_deconstruct or p_data.features.auto_mine then
+                    core.process_deconstruction(player)
+                end
+            end
+        end
+    end
+end
+
+script.on_init(on_init)
+script.on_configuration_changed(on_configuration_changed)
+script.on_event(defines.events.on_player_created, on_player_created)
+script.on_event(defines.events.on_player_joined_game, on_player_joined_game)
+script.on_event(defines.events.on_tick, on_tick)
+
+script.on_nth_tick(1800, function()
+    for index, player in pairs(game.connected_players) do
+        local player = game.get_player(index)
+        if player and player.valid then
+            check_active_permissions(player, index)
+        end
     end
 end)
 
@@ -201,35 +131,61 @@ script.on_event(defines.events.on_player_demoted, function(event)
     check_active_permissions(player, event.player_index)
 end)
 
-script.on_init(on_init)
-script.on_configuration_changed(on_configuration_changed)
-
-script.on_event("fbp-open-config", toggle_config_gui)
-
-script.on_event(defines.events.on_gui_checked_state_changed, function(event)
-    local element = event.element
-    if not element or not element.valid then return end
-    if not element.name or not element.name:find("^fbp%-feature%-") then return end
-
+script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
     local player = game.get_player(event.player_index)
     if not player then return end
-
+    
     ensure_player_storage(event.player_index)
     local p_data = storage.players[event.player_index]
-
-    local feature_key = element.name:gsub("^fbp%-feature%-", "")
-    if p_data.features[feature_key] ~= nil then
-        p_data.features[feature_key] = element.state
+    
+    if event.setting == "fbp-speed" then
+        p_data.speed = settings.get_player_settings(player)["fbp-speed"].value
+    elseif event.setting == "fbp-scan-radius" then
+        p_data.scan_radius = settings.get_player_settings(player)["fbp-scan-radius"].value
+    elseif event.setting == "fbp-enable-for-me" then
+         check_active_permissions(player, event.player_index)
     end
 end)
 
-script.on_event(defines.events.on_gui_click, function(event)
-    local element = event.element
-    if not element or not element.valid then return end
-    if element.name == "fbp-config-close" then
+script.on_event("fbp-open-config", gui.toggle_config_gui)
+script.on_event(defines.events.on_gui_click, gui.handle_gui_click)
+script.on_event(defines.events.on_gui_checked_state_changed, gui.handle_gui_checked_state_changed)
+
+script.on_event(defines.events.on_lua_shortcut, function(event)
+    if event.prototype_name == "fbp-toggle" then
         local player = game.get_player(event.player_index)
-        if player then
-            destroy_config_gui(player)
+        if not player then return end
+        
+        local allowed, reason = utils.is_allowed(player)
+        if not allowed then
+            local msg_key = "fbp-message." .. (reason or "admin-only")
+            debug_print(player, {msg_key})
+            player.create_local_flying_text({text={msg_key}, create_at_cursor=true})
+            player.set_shortcut_toggled("fbp-toggle", false)
+            if storage.players[event.player_index] then
+                storage.players[event.player_index].active = false
+            end
+            return
+        end
+        
+        ensure_player_storage(event.player_index)
+        local p_data = storage.players[event.player_index]
+        p_data.active = not p_data.active
+        
+        player.set_shortcut_toggled("fbp-toggle", p_data.active)
+        
+        if p_data.active then
+            debug_print(player, {"message.printer_activated"})
+            player.create_local_flying_text({text = {"fbp-message.printer-active"}, position = player.position})
+            
+            local inventory = player.get_main_inventory()
+            if not inventory or not inventory.valid then
+                player.print({"fbp-message.no-inventory-chat"})
+                player.create_local_flying_text({text = {"fbp-message.no-inventory-flying"}, position = player.position, color = {1, 0, 0}, create_at_cursor = false})
+            end
+        else
+            debug_print(player, {"message.printer_deactivated"})
+            player.create_local_flying_text({text = {"fbp-message.printer-inactive"}, position = player.position})
         end
     end
 end)
@@ -261,438 +217,4 @@ commands.add_command("fbp-check", {"message.diagnostic_command_desc"}, function(
         player.print({"message.inventory_invalid"})
     end
     player.print("============================")
-end)
-
-script.on_event(defines.events.on_lua_shortcut, function(event)
-    if event.prototype_name == "fbp-toggle" then
-        local player = game.get_player(event.player_index)
-        if not player then return end
-        
-        local allowed, reason = is_allowed(player)
-        if not allowed then
-            local msg_key = "fbp-message." .. (reason or "admin-only")
-            debug_print(player, {msg_key})
-            player.create_local_flying_text({text={msg_key}, create_at_cursor=true})
-            player.set_shortcut_toggled("fbp-toggle", false)
-            if storage.players[event.player_index] then
-                storage.players[event.player_index].active = false
-            end
-            return
-        end
-        
-        ensure_player_storage(event.player_index)
-        
-        local p_data = storage.players[event.player_index]
-        p_data.active = not p_data.active
-        
-        player.set_shortcut_toggled("fbp-toggle", p_data.active)
-        
-        if p_data.active then
-            debug_print(player, {"message.printer_activated"})
-            player.create_local_flying_text({text = {"fbp-message.printer-active"}, position = player.position})
-            
-            local inventory = player.get_main_inventory()
-            if not inventory or not inventory.valid then
-                player.print({"fbp-message.no-inventory-chat"})
-                player.create_local_flying_text({text = {"fbp-message.no-inventory-flying"}, position = player.position, color = {1, 0, 0}, create_at_cursor = false})
-            end
-        else
-            debug_print(player, {"message.printer_deactivated"})
-            player.create_local_flying_text({text = {"fbp-message.printer-inactive"}, position = player.position})
-        end
-    end
-end)
-
-script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
-    if event.setting == "fbp-speed" then
-        local player = game.get_player(event.player_index)
-        if not player then return end
-        
-        ensure_player_storage(event.player_index)
-        
-        local new_speed = settings.get_player_settings(player)["fbp-speed"].value
-        storage.players[event.player_index].speed = new_speed
-    elseif event.setting == "fbp-scan-radius" then
-        local player = game.get_player(event.player_index)
-        if not player then return end
-
-        ensure_player_storage(event.player_index)
-        local new_radius = settings.get_player_settings(player)["fbp-scan-radius"].value
-        storage.players[event.player_index].scan_radius = new_radius
-    end
-end)
-
-script.on_nth_tick(1800, function()
-    for index, player in pairs(game.connected_players) do
-        check_active_permissions(player, index)
-    end
-end)
-
-local CONTAINER_TYPES = {
-    ["container"] = true,
-    ["logistic-container"] = true,
-    ["infinity-container"] = true,
-    ["linked-container"] = true,
-    ["cargo-wagon"] = true,
-    ["storage-tank"] = true,
-}
-
-local function is_container_type(entity)
-    return CONTAINER_TYPES[entity.type] or false
-end
-
-local function is_inventory_nearly_full(player, threshold)
-    local inventory = player.get_main_inventory()
-    if not inventory or not inventory.valid then return true end
-    local empty = inventory.count_empty_stacks()
-    local total = #inventory
-    return (empty / total) < (1 - threshold)
-end
-
-local function process_deconstruction(player)
-    -- Stop auto-mining while walking to prevent camera twitching
-    if player.walking_state.walking then return end
-
-    local max_radius = settings.get_player_settings(player)["fbp-scan-radius"].value
-    local state = player.mining_state
-    if state.mining then
-        -- Entity mining
-        if state.target then
-            if state.target.valid then
-                if state.target.to_be_deconstructed(player.force) then
-                    -- Continue mining current target
-                    player.update_selected_entity(state.target.position)
-                    return
-                else
-                    -- Target no longer marked for deconstruction, stop mining
-                    player.mining_state = {mining = false}
-                    return
-                end
-            else
-                -- Target is invalid (was destroyed), explicitly stop mining
-                player.mining_state = {mining = false}
-                return
-            end
-        -- Tile mining
-        elseif state.position then
-            local tile = player.surface.get_tile(state.position)
-            if tile and tile.valid and tile.to_be_deconstructed(player.force) then
-                -- Continue mining current tile
-                player.update_selected_entity(state.position)
-                return
-            else
-                -- Tile no longer needs deconstruction, stop mining
-                player.mining_state = {mining = false}
-                return
-            end
-        end
-    end
-
-    -- Only search for new targets when explicitly not mining
-    local entity = player.surface.find_entities_filtered{
-        position = player.position,
-        radius = math.min(player.build_distance, max_radius),
-        to_be_deconstructed = true,
-        force = player.force,
-        limit = 1
-    }[1]
-
-    if entity then
-        if is_container_type(entity) and is_inventory_nearly_full(player, 0.9) then
-            return
-        end
-        player.update_selected_entity(entity.position)
-        player.mining_state = {mining = true, position = entity.position, target = entity}
-        return
-    end
-
-    -- Process Auto Mine (Trees/Rocks) if enabled
-    ensure_player_storage(player.index)
-    local p_data = storage.players[player.index]
-    if p_data.features.auto_mine then
-        local neutral_target = player.surface.find_entities_filtered{
-            position = player.position,
-            radius = math.min(player.build_distance, max_radius),
-            type = {"tree", "simple-entity"},
-            limit = 1
-        }[1]
-        
-        if neutral_target and neutral_target.valid and neutral_target.to_be_deconstructed(player.force) then
-             player.update_selected_entity(neutral_target.position)
-             player.mining_state = {mining = true, position = neutral_target.position, target = neutral_target}
-             return
-        end
-    end
-
-    local tile = player.surface.find_tiles_filtered{
-        position = player.position,
-        radius = math.min(player.build_distance, max_radius),
-        to_be_deconstructed = true,
-        force = player.force,
-        limit = 1
-    }[1]
-
-    if tile then
-        player.update_selected_entity(tile.position)
-        player.mining_state = {mining = true, position = tile.position}
-    end
-
-    -- 搜索被标记的地面物品
-    local items_on_ground = player.surface.find_entities_filtered{
-        position = player.position,
-        radius = math.min(player.build_distance, max_radius),
-        type = "item-on-ground",
-        limit = 10
-    }
-
-    local inventory = player.get_main_inventory()
-    if inventory and inventory.valid then
-        for _, item_entity in pairs(items_on_ground) do
-        if item_entity.valid and item_entity.to_be_deconstructed(player.force) then
-                local stack = item_entity.stack
-                if stack and stack.valid then
-                    local inserted = inventory.insert(stack)
-                    if inserted > 0 then
-                        if inserted >= stack.count then
-                            item_entity.destroy()
-                        else
-                            stack.count = stack.count - inserted
-                        end
-                    end
-                end
-            end
-        end
-    end
-end
-
-local function process_upgrades(player, limit)
-    local inventory = player.get_main_inventory()
-    if not inventory or not inventory.valid then return end
-    
-    local max_radius = settings.get_player_settings(player)["fbp-scan-radius"].value
-    local target_limit = limit or 5
-    local entities = player.surface.find_entities_filtered{
-        position = player.position,
-        radius = math.min(player.build_distance, max_radius),
-        force = player.force
-    }
-    
-    local upgraded_count = 0
-    for _, entity in pairs(entities) do
-        if entity.valid and entity.to_be_upgraded() then
-            local upgrade_target = entity.get_upgrade_target()
-            
-            if upgrade_target then
-                local target_name = upgrade_target.name
-                local items_needed = upgrade_target.items_to_place_this
-                
-                if items_needed and items_needed[1] then
-                    local item_name = items_needed[1].name
-                    local quality = entity.quality and entity.quality.name or "normal"
-                    
-                    if inventory.get_item_count({name = item_name, quality = quality}) >= 1 then
-                        local new_entity = player.surface.create_entity{
-                            name = target_name,
-                            position = entity.position,
-                            direction = entity.direction,
-                            force = entity.force,
-                            quality = quality,
-                            fast_replace = true,
-                            player = player,
-                            raise_built = true
-                        }
-                        
-                        if new_entity then
-                            inventory.remove({name = item_name, quality = quality, count = 1})
-                            upgraded_count = upgraded_count + 1
-                        end
-                    end
-                end
-            end
-        end
-        
-        if upgraded_count >= target_limit then break end
-    end
-end
-
-local function process_player(player, p_data, limit)
-    local inventory = player.get_main_inventory()
-    if not inventory or not inventory.valid then
-        debug_print(player, {"message.no_inventory_found"})
-        return 
-    end
-
-    if not p_data.scan_multiplier then
-        p_data.scan_multiplier = 20
-    end
-
-    local target_limit = limit or 5
-    local scan_limit = target_limit * p_data.scan_multiplier
-    local max_radius = settings.get_player_settings(player)["fbp-scan-radius"].value
-    local ghosts = player.surface.find_entities_filtered{
-        type = "entity-ghost",
-        position = player.position,
-        radius = math.min(player.build_distance, max_radius),
-        limit = scan_limit
-    }
-
-    local found_ghosts_count = #ghosts
-    if found_ghosts_count == 0 then
-        return
-    end
-
-    local revived_count = 0
-
-    for _, ghost in pairs(ghosts) do
-        if ghost.valid then
-            local required_quality = ghost.quality and ghost.quality.name or "normal"
-            local items_to_place = ghost.ghost_prototype.items_to_place_this
-            
-                if items_to_place then
-                for _, item_stack in pairs(items_to_place) do
-                    local item_name = item_stack.name
-                    local count = item_stack.count or 1
-                    
-                    if inventory.get_item_count({name = item_name, quality = required_quality}) >= count then
-                        local bbox = ghost.bounding_box
-                        local surface = ghost.surface
-                        local water_tiles = {}
-                        
-                        for x = math.floor(bbox.left_top.x), math.floor(bbox.right_bottom.x) do
-                            for y = math.floor(bbox.left_top.y), math.floor(bbox.right_bottom.y) do
-                                local tile = surface.get_tile(x, y)
-                                if tile.valid and tile.collides_with("water-tile") then
-                                    table.insert(water_tiles, {x = x, y = y})
-                                end
-                            end
-                        end
-                        
-                        if #water_tiles > 0 then
-                            if not p_data.features.auto_landfill then
-                                goto continue_ghost
-                            end
-                            
-                            local landfill_available = inventory.get_item_count({name = "landfill"})
-                            if landfill_available < #water_tiles then
-                                goto continue_ghost
-                            end
-                            
-                            local tiles_to_place = {}
-                            for _, pos in pairs(water_tiles) do
-                                table.insert(tiles_to_place, {name = "landfill", position = {x = pos.x, y = pos.y}})
-                            end
-                            surface.set_tiles(tiles_to_place)
-                            inventory.remove({name = "landfill", count = #water_tiles})
-                        end
-                        
-                        local module_requests = ghost.item_requests
-                        
-                        -- 在 revive 前获取物品的 health 比率
-                        local item_health_ratio = 1.0
-                        local found_item = inventory.find_item_stack(item_name)
-                        if found_item and found_item.valid and found_item.health then
-                            item_health_ratio = found_item.health
-                        end
-                        
-                        local success, revived_entity = ghost.revive({raise_revive = true})
-                        
-                        if success then
-                            debug_print(player, {"message.placed_item", item_name})
-                            inventory.remove({name = item_name, quality = required_quality, count = count})
-                            
-                            -- 恢复实体的 health（从物品比率 → 实体绝对值）
-                            if revived_entity and revived_entity.valid and revived_entity.prototype.max_health then
-                                revived_entity.health = item_health_ratio * revived_entity.prototype.max_health
-                            end
-                            
-                            if module_requests and revived_entity and revived_entity.valid and p_data.features.auto_modules then
-                                local module_inventory = revived_entity.get_module_inventory()
-                                if module_inventory then
-                                    for _, module_request in pairs(module_requests) do
-                                        local module_name = module_request.name
-                                        local module_quality = module_request.quality and module_request.quality.name or "normal"
-                                        local module_count = module_request.count or 1
-                                        
-                                        local available = inventory.get_item_count({name = module_name, quality = module_quality})
-                                        local to_insert = math.min(available, module_count)
-                                        
-                                        if to_insert > 0 then
-                                            local inserted = module_inventory.insert({name = module_name, quality = module_quality, count = to_insert})
-                                            if inserted > 0 then
-                                                inventory.remove({name = module_name, quality = module_quality, count = inserted})
-                                            end
-                                        end
-                                    end
-                                end
-                            end
-                            
-                            revived_count = revived_count + 1
-                            break
-                        else
-                            debug_print(player, {"message.failed_to_revive", item_name})
-                        end
-                    end
-                end
-            end
-        end
-        ::continue_ghost::
-        if revived_count >= target_limit then
-            break
-        end
-    end
-
-    if revived_count < target_limit and found_ghosts_count == scan_limit then
-        p_data.scan_multiplier = math.min(p_data.scan_multiplier + 10, 200)
-        debug_print(player, {"message.scanning_ramp_up", p_data.scan_multiplier})
-    else
-        p_data.scan_multiplier = math.max(p_data.scan_multiplier - 5, 5)
-        debug_print(player, {"message.scanning_ramp_down", p_data.scan_multiplier})
-    end
-end
-
-script.on_event(defines.events.on_tick, function(event)
-    for index, player in pairs(game.connected_players) do
-        local p_data = storage.players[index]
-        
-        -- Permission check removed from on_tick. Permissions are now event-driven
-        -- via on_player_joined_game, on_player_demoted, and on_runtime_mod_setting_changed.
-        if p_data and p_data.active then
-            local speed = p_data.speed or 1
-            if speed < 1 then speed = 1 end
-            
-            if not p_data.placement_acc then p_data.placement_acc = 0 end
-            if not p_data.features then p_data.features = {} end
-
-            local batch_mode = settings.get_player_settings(player)["fbp-batch-mode"].value
-            if batch_mode then
-                if event.tick % speed == 0 then
-                    if p_data.features.auto_place then
-                        process_player(player, p_data, 5)
-                    end
-                    if p_data.features.auto_upgrade then
-                        process_upgrades(player, 5)
-                    end
-                    if p_data.features.auto_deconstruct or p_data.features.auto_mine then
-                        process_deconstruction(player)
-                    end
-                end
-            else
-                p_data.placement_acc = math.min(p_data.placement_acc + (5 / speed), 2.0)
-                
-                if p_data.placement_acc >= 1 then
-                    if p_data.features.auto_place then
-                        process_player(player, p_data, 1)
-                    end
-                    if p_data.features.auto_upgrade then
-                        process_upgrades(player, 1)
-                    end
-                    p_data.placement_acc = p_data.placement_acc - 1
-                end
-
-                if (p_data.features.auto_deconstruct or p_data.features.auto_mine) and event.tick % speed == 0 then
-                    process_deconstruction(player)
-                end
-            end
-        end
-    end
 end)
