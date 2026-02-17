@@ -39,10 +39,11 @@ data:extend({
     order = "c"
   },
   {
-    type = "bool-setting",
+    type = "string-setting",
     name = "fbp-debug-mode",
     setting_type = "runtime-per-user",
-    default_value = false,
+    default_value = "none",
+    allowed_values = {"none", "personal", "all"},
     order = "d"
   }
 })

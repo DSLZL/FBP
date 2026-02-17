@@ -1,6 +1,11 @@
-local function debug_print(player, msg)
-    if settings.get_player_settings(player)["fbp-debug-mode"].value then
-        player.print({"", "[FBP Debug] ", msg})
+local function debug_print(source_player, msg)
+    for _, p in pairs(game.connected_players) do
+        local debug_setting = settings.get_player_settings(p)["fbp-debug-mode"].value
+        if debug_setting == "all" then
+            p.print({"", "[FBP Debug] (" .. source_player.name .. ") ", msg})
+        elseif debug_setting == "personal" and p.index == source_player.index then
+            p.print({"", "[FBP Debug] ", msg})
+        end
     end
 end
 
