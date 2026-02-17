@@ -4,6 +4,8 @@ local function debug_print(player, msg)
     end
 end
 
+local MAX_RADIUS = 100
+
 local function ensure_player_storage(player_index)
     if not storage.players then
         storage.players = {}
@@ -361,7 +363,7 @@ local function process_deconstruction(player)
     -- Only search for new targets when explicitly not mining
     local entity = player.surface.find_entities_filtered{
         position = player.position,
-        radius = player.build_distance,
+        radius = math.min(player.build_distance, MAX_RADIUS),
         to_be_deconstructed = true,
         force = player.force,
         limit = 1
@@ -382,7 +384,7 @@ local function process_deconstruction(player)
     if p_data.features.auto_mine then
         local neutral_target = player.surface.find_entities_filtered{
             position = player.position,
-            radius = player.build_distance,
+            radius = math.min(player.build_distance, MAX_RADIUS),
             type = {"tree", "simple-entity"},
             limit = 1
         }[1]
@@ -396,7 +398,7 @@ local function process_deconstruction(player)
 
     local tile = player.surface.find_tiles_filtered{
         position = player.position,
-        radius = player.build_distance,
+        radius = math.min(player.build_distance, MAX_RADIUS),
         to_be_deconstructed = true,
         force = player.force,
         limit = 1
@@ -410,7 +412,7 @@ local function process_deconstruction(player)
     -- 搜索被标记的地面物品
     local items_on_ground = player.surface.find_entities_filtered{
         position = player.position,
-        radius = player.build_distance,
+        radius = math.min(player.build_distance, MAX_RADIUS),
         type = "item-on-ground",
         limit = 10
     }
@@ -442,7 +444,7 @@ local function process_upgrades(player, limit)
     local target_limit = limit or 5
     local entities = player.surface.find_entities_filtered{
         position = player.position,
-        radius = player.build_distance,
+        radius = math.min(player.build_distance, MAX_RADIUS),
         force = player.force
     }
     
@@ -525,7 +527,7 @@ local function process_player(player, p_data, limit)
     local ghosts = player.surface.find_entities_filtered{
         type = "entity-ghost",
         position = player.position,
-        radius = player.build_distance,
+        radius = math.min(player.build_distance, MAX_RADIUS),
         limit = scan_limit
     }
 
