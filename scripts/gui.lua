@@ -6,7 +6,6 @@ gui.FEATURE_LABELS = {
     {key = "auto_place", caption = {"fbp-gui.auto-place"}},
     {key = "auto_upgrade", caption = {"fbp-gui.auto-upgrade"}},
     {key = "auto_deconstruct", caption = {"fbp-gui.auto-deconstruct"}},
-    {key = "auto_mine", caption = {"fbp-gui.auto-mine"}},
     {key = "auto_modules", caption = {"fbp-gui.auto-modules"}},
     {key = "auto_landfill", caption = {"fbp-gui.auto-landfill"}}
 }
