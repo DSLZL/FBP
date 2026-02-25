@@ -10,6 +10,27 @@ local function ensure_player_storage(index)
     utils.ensure_player_storage(index)
 end
 
+local function is_editor_controller(player)
+    return player and player.valid and player.controller_type == defines.controllers.editor
+end
+
+local function reset_editor_blocked_state(player, p_data)
+    if not player or not player.valid then return end
+
+    if p_data then
+        p_data.active = false
+        p_data.deconstruct_active = false
+        if p_data.features then
+            p_data.features.auto_deconstruct = false
+            p_data.features.auto_mine = false
+        end
+    end
+
+    player.mining_state = {mining = false}
+    player.set_shortcut_toggled("fbp-toggle", false)
+    player.set_shortcut_toggled("fbp-deconstruct-toggle", false)
+end
+
 local function check_active_permissions(player, index)
     if not player or not player.valid then
         core.check_active_permissions(player, index)
@@ -134,7 +155,9 @@ end
 local function on_tick(event)
     for index, player in pairs(game.connected_players) do
         local p_data = storage.players[index]
-        if p_data then
+        if is_editor_controller(player) then
+            reset_editor_blocked_state(player, p_data)
+        elseif p_data then
             if p_data.deconstruct_active == nil then
                 p_data.deconstruct_active = (p_data.features and (p_data.features.auto_deconstruct or p_data.features.auto_mine)) and true or false
             end
@@ -212,20 +235,24 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
         local player = game.get_player(event.player_index)
         if not player then return end
 
+        ensure_player_storage(event.player_index)
+        local p_data = storage.players[event.player_index]
+        if is_editor_controller(player) then
+            reset_editor_blocked_state(player, p_data)
+            player.create_local_flying_text({text = {"fbp-message.printer-inactive"}, position = player.position})
+            return
+        end
+
         local allowed, reason = utils.is_allowed(player)
         if not allowed then
             local msg_key = "fbp-message." .. (reason or "admin-only")
             debug_print(player, {msg_key})
             player.create_local_flying_text({text={msg_key}, create_at_cursor=true})
             player.set_shortcut_toggled("fbp-toggle", false)
-            if storage.players[event.player_index] then
-                storage.players[event.player_index].active = false
-            end
+            p_data.active = false
             return
         end
 
-        ensure_player_storage(event.player_index)
-        local p_data = storage.players[event.player_index]
         p_data.active = not p_data.active
 
         player.set_shortcut_toggled("fbp-toggle", p_data.active)
@@ -248,24 +275,28 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
         local player = game.get_player(event.player_index)
         if not player then return end
 
+        ensure_player_storage(event.player_index)
+        local p_data = storage.players[event.player_index]
+        if is_editor_controller(player) then
+            reset_editor_blocked_state(player, p_data)
+            player.create_local_flying_text({text = {"fbp-message.deconstruct-inactive"}, position = player.position})
+            return
+        end
+
         local allowed, reason = utils.is_allowed(player)
         if not allowed then
             local msg_key = "fbp-message." .. (reason or "admin-only")
             debug_print(player, {msg_key})
             player.create_local_flying_text({text={msg_key}, create_at_cursor=true})
             player.set_shortcut_toggled("fbp-deconstruct-toggle", false)
-            if storage.players[event.player_index] then
-                storage.players[event.player_index].deconstruct_active = false
-                if storage.players[event.player_index].features then
-                    storage.players[event.player_index].features.auto_deconstruct = false
-                    storage.players[event.player_index].features.auto_mine = false
-                end
+            p_data.deconstruct_active = false
+            if p_data.features then
+                p_data.features.auto_deconstruct = false
+                p_data.features.auto_mine = false
             end
             return
         end
 
-        ensure_player_storage(event.player_index)
-        local p_data = storage.players[event.player_index]
         local new_state = not (p_data.deconstruct_active or false)
         p_data.deconstruct_active = new_state
         p_data.features.auto_deconstruct = new_state
