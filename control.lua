@@ -149,14 +149,18 @@ local function on_tick(event)
                     p_data.features.auto_mine = deconstruct_active
                 end
 
+                local arbitration_context = {
+                    consumed_positions = {}
+                }
+
                 if p_data.active and p_data.features and p_data.features.auto_place then
-                    core.process_auto_place(player, p_data, 5)
+                    core.process_auto_place(player, p_data, 5, arbitration_context)
                 end
                 if p_data.active and p_data.features and p_data.features.auto_upgrade then
-                    core.process_upgrades(player, 5)
+                    core.process_upgrades(player, 5, arbitration_context)
                 end
                 if deconstruct_active then
-                    core.process_deconstruction(player)
+                    core.process_deconstruction(player, arbitration_context)
                 end
             end
         end

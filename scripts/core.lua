@@ -7,6 +7,27 @@ local is_allowed = utils.is_allowed
 local is_container_type = utils.is_container_type
 local is_inventory_nearly_full = utils.is_inventory_nearly_full
 
+local function get_position_key(surface, position)
+    if not surface or not position then return nil end
+    local tile_x = math.floor(position.x)
+    local tile_y = math.floor(position.y)
+    return surface.index .. ":" .. tile_x .. ":" .. tile_y
+end
+
+local function is_position_consumed(consumed_positions, surface, position)
+    if not consumed_positions then return false end
+    local position_key = get_position_key(surface, position)
+    if not position_key then return false end
+    return consumed_positions[position_key] == true
+end
+
+local function mark_position_consumed(consumed_positions, surface, position)
+    if not consumed_positions then return end
+    local position_key = get_position_key(surface, position)
+    if not position_key then return end
+    consumed_positions[position_key] = true
+end
+
 function core.check_active_permissions(player, player_index)
     if not player or not player.valid then return end
     ensure_player_storage(player_index)
@@ -23,7 +44,8 @@ function core.check_active_permissions(player, player_index)
     end
 end
 
-function core.process_deconstruction(player)
+function core.process_deconstruction(player, context)
+    local consumed_positions = context and context.consumed_positions or nil
     local state = player.mining_state
 
     if player.walking_state.walking then
@@ -35,6 +57,11 @@ function core.process_deconstruction(player)
 
     if state.mining then
         if state.target then
+            if is_position_consumed(consumed_positions, state.target.surface, state.target.position) then
+                player.mining_state = {mining = false}
+                return
+            end
+
             if state.target.valid and state.target.to_be_deconstructed(player.force) then
                 player.update_selected_entity(state.target.position)
                 return
@@ -45,6 +72,11 @@ function core.process_deconstruction(player)
         end
 
         if state.position then
+            if is_position_consumed(consumed_positions, player.surface, state.position) then
+                player.mining_state = {mining = false}
+                return
+            end
+
             local tile = player.surface.get_tile(state.position)
             if tile and tile.valid and tile.to_be_deconstructed(player.force) then
                 player.update_selected_entity(state.position)
@@ -60,13 +92,21 @@ function core.process_deconstruction(player)
     end
 
     local max_radius = settings.get_player_settings(player)["fbp-scan-radius"].value
-    local entity = player.surface.find_entities_filtered{
+    local entities = player.surface.find_entities_filtered{
         position = player.position,
         radius = math.min(player.build_distance, max_radius),
         to_be_deconstructed = true,
         force = player.force,
-        limit = 1
-    }[1]
+        limit = 10
+    }
+
+    local entity = nil
+    for _, candidate in pairs(entities) do
+        if candidate.valid and not is_position_consumed(consumed_positions, candidate.surface, candidate.position) then
+            entity = candidate
+            break
+        end
+    end
 
     if entity then
         if is_container_type(entity) and is_inventory_nearly_full(player, 0.9) then
@@ -81,27 +121,46 @@ function core.process_deconstruction(player)
     ensure_player_storage(player.index)
     local p_data = storage.players[player.index]
     if p_data.features.auto_mine then
-        local neutral_target = player.surface.find_entities_filtered{
+        local neutral_targets = player.surface.find_entities_filtered{
             position = player.position,
             radius = math.min(player.build_distance, max_radius),
             type = {"tree", "simple-entity"},
-            limit = 1
-        }[1]
+            limit = 10
+        }
+
+        local neutral_target = nil
+        for _, candidate in pairs(neutral_targets) do
+            if candidate.valid
+                and candidate.to_be_deconstructed(player.force)
+                and not is_position_consumed(consumed_positions, candidate.surface, candidate.position)
+            then
+                neutral_target = candidate
+                break
+            end
+        end
         
-        if neutral_target and neutral_target.valid and neutral_target.to_be_deconstructed(player.force) then
+        if neutral_target then
              player.update_selected_entity(neutral_target.position)
              player.mining_state = {mining = true, position = neutral_target.position, target = neutral_target}
              return
         end
     end
 
-    local tile = player.surface.find_tiles_filtered{
+    local tiles = player.surface.find_tiles_filtered{
         position = player.position,
         radius = math.min(player.build_distance, max_radius),
         to_be_deconstructed = true,
         force = player.force,
-        limit = 1
-    }[1]
+        limit = 10
+    }
+
+    local tile = nil
+    for _, candidate in pairs(tiles) do
+        if candidate.valid and not is_position_consumed(consumed_positions, player.surface, candidate.position) then
+            tile = candidate
+            break
+        end
+    end
 
     if tile then
         player.update_selected_entity(tile.position)
@@ -119,7 +178,10 @@ function core.process_deconstruction(player)
     local inventory = player.get_main_inventory()
     if inventory and inventory.valid then
         for _, item_entity in pairs(items_on_ground) do
-        if item_entity.valid and item_entity.to_be_deconstructed(player.force) then
+            if item_entity.valid
+                and item_entity.to_be_deconstructed(player.force)
+                and not is_position_consumed(consumed_positions, item_entity.surface, item_entity.position)
+            then
                 local stack = item_entity.stack
                 if stack and stack.valid then
                     local inserted = inventory.insert(stack)
@@ -136,7 +198,8 @@ function core.process_deconstruction(player)
     end
 end
 
-function core.process_upgrades(player, limit)
+function core.process_upgrades(player, limit, context)
+    local consumed_positions = context and context.consumed_positions or nil
     local inventory = player.get_main_inventory()
     if not inventory or not inventory.valid then return end
     
@@ -151,7 +214,10 @@ function core.process_upgrades(player, limit)
     
     local upgraded_count = 0
     for _, entity in pairs(entities) do
-        if entity.valid and entity.to_be_upgraded() then
+        if entity.valid
+            and entity.to_be_upgraded()
+            and not is_position_consumed(consumed_positions, entity.surface, entity.position)
+        then
             local upgrade_target = entity.get_upgrade_target()
             
             if upgrade_target then
@@ -177,6 +243,7 @@ function core.process_upgrades(player, limit)
                         if new_entity then
                             inventory.remove({name = item_name, quality = quality, count = 1})
                             upgraded_count = upgraded_count + 1
+                            mark_position_consumed(consumed_positions, entity.surface, entity.position)
                         end
                     end
                 end
@@ -187,7 +254,8 @@ function core.process_upgrades(player, limit)
     end
 end
 
-function core.process_auto_place(player, p_data, limit)
+function core.process_auto_place(player, p_data, limit, context)
+    local consumed_positions = context and context.consumed_positions or nil
     local inventory = player.get_main_inventory()
     if not inventory or not inventory.valid then
         debug_print(player, {"message.no_inventory_found"})
@@ -216,7 +284,7 @@ function core.process_auto_place(player, p_data, limit)
     local revived_count = 0
 
     for _, ghost in pairs(ghosts) do
-        if ghost.valid then
+        if ghost.valid and not is_position_consumed(consumed_positions, ghost.surface, ghost.position) then
             local required_quality = ghost.quality and ghost.quality.name or "normal"
             local items_to_place = ghost.ghost_prototype.items_to_place_this
             
@@ -293,6 +361,7 @@ function core.process_auto_place(player, p_data, limit)
                             end
                             
                             revived_count = revived_count + 1
+                            mark_position_consumed(consumed_positions, ghost.surface, ghost.position)
                             break
                         else
                             debug_print(player, {"message.failed_to_revive", item_name})
