@@ -155,7 +155,7 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
     if event.prototype_name == "fbp-toggle" then
         local player = game.get_player(event.player_index)
         if not player then return end
-        
+
         local allowed, reason = utils.is_allowed(player)
         if not allowed then
             local msg_key = "fbp-message." .. (reason or "admin-only")
@@ -167,17 +167,17 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
             end
             return
         end
-        
+
         ensure_player_storage(event.player_index)
         local p_data = storage.players[event.player_index]
         p_data.active = not p_data.active
-        
+
         player.set_shortcut_toggled("fbp-toggle", p_data.active)
-        
+
         if p_data.active then
             debug_print(player, {"message.printer_activated"})
             player.create_local_flying_text({text = {"fbp-message.printer-active"}, position = player.position})
-            
+
             local inventory = player.get_main_inventory()
             if not inventory or not inventory.valid then
                 player.print({"fbp-message.no-inventory-chat"})
@@ -186,6 +186,37 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
         else
             debug_print(player, {"message.printer_deactivated"})
             player.create_local_flying_text({text = {"fbp-message.printer-inactive"}, position = player.position})
+        end
+        return
+    elseif event.prototype_name == "fbp-deconstruct-toggle" then
+        local player = game.get_player(event.player_index)
+        if not player then return end
+
+        local allowed, reason = utils.is_allowed(player)
+        if not allowed then
+            local msg_key = "fbp-message." .. (reason or "admin-only")
+            debug_print(player, {msg_key})
+            player.create_local_flying_text({text={msg_key}, create_at_cursor=true})
+            player.set_shortcut_toggled("fbp-deconstruct-toggle", false)
+            if storage.players[event.player_index] then
+                storage.players[event.player_index].deconstruct_active = false
+            end
+            return
+        end
+
+        ensure_player_storage(event.player_index)
+        local p_data = storage.players[event.player_index]
+        local new_state = not (p_data.deconstruct_active or false)
+        p_data.deconstruct_active = new_state
+
+        player.set_shortcut_toggled("fbp-deconstruct-toggle", new_state)
+
+        if new_state then
+            debug_print(player, {"message.deconstruction_activated"})
+            player.create_local_flying_text({text = {"fbp-message.deconstruct-active"}, position = player.position})
+        else
+            debug_print(player, {"message.deconstruction_deactivated"})
+            player.create_local_flying_text({text = {"fbp-message.deconstruct-inactive"}, position = player.position})
         end
     end
 end)
