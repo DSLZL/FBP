@@ -213,43 +213,59 @@ function core.process_upgrades(player, limit, context)
     }
     
     local upgraded_count = 0
+    local failed_upgrade_positions = {}
     for _, entity in pairs(entities) do
         if entity.valid
             and entity.to_be_upgraded()
             and not is_position_consumed(consumed_positions, entity.surface, entity.position)
         then
+            local position_key = get_position_key(entity.surface, entity.position)
+            if position_key and failed_upgrade_positions[position_key] then
+                goto continue_upgrade
+            end
+
             local upgrade_target = entity.get_upgrade_target()
-            
-            if upgrade_target then
-                local target_name = upgrade_target.name
-                local items_needed = upgrade_target.items_to_place_this
-                
-                if items_needed and items_needed[1] then
-                    local item_name = items_needed[1].name
-                    local quality = entity.quality and entity.quality.name or "normal"
-                    
-                    if inventory.get_item_count({name = item_name, quality = quality}) >= 1 then
-                        local new_entity = player.surface.create_entity{
-                            name = target_name,
-                            position = entity.position,
-                            direction = entity.direction,
-                            force = entity.force,
-                            quality = quality,
-                            fast_replace = true,
-                            player = player,
-                            raise_built = true
-                        }
-                        
-                        if new_entity then
-                            inventory.remove({name = item_name, quality = quality, count = 1})
-                            upgraded_count = upgraded_count + 1
-                            mark_position_consumed(consumed_positions, entity.surface, entity.position)
-                        end
-                    end
+            if not upgrade_target then
+                goto continue_upgrade
+            end
+
+            local items_needed = upgrade_target.items_to_place_this
+            if not items_needed or not items_needed[1] then
+                if position_key then
+                    failed_upgrade_positions[position_key] = true
                 end
+                goto continue_upgrade
+            end
+
+            local item_name = items_needed[1].name
+            local required_count = items_needed[1].count or 1
+            local quality = entity.quality and entity.quality.name or "normal"
+            if inventory.get_item_count({name = item_name, quality = quality}) < required_count then
+                if position_key then
+                    failed_upgrade_positions[position_key] = true
+                end
+                goto continue_upgrade
+            end
+
+            local new_entity = player.surface.create_entity{
+                name = upgrade_target.name,
+                position = entity.position,
+                direction = entity.direction,
+                force = entity.force,
+                quality = quality,
+                fast_replace = true,
+                player = player,
+                raise_built = true
+            }
+
+            if new_entity then
+                inventory.remove({name = item_name, quality = quality, count = required_count})
+                upgraded_count = upgraded_count + 1
+                mark_position_consumed(consumed_positions, entity.surface, entity.position)
             end
         end
-        
+
+        ::continue_upgrade::
         if upgraded_count >= target_limit then break end
     end
 end
