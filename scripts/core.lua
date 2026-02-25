@@ -24,45 +24,42 @@ function core.check_active_permissions(player, player_index)
 end
 
 function core.process_deconstruction(player)
-    -- Stop auto-mining while walking to prevent camera twitching
-    if player.walking_state.walking then return end
-
-    local max_radius = settings.get_player_settings(player)["fbp-scan-radius"].value
     local state = player.mining_state
-    if state.mining then
-        -- Entity mining
-        if state.target then
-            if state.target.valid then
-                if state.target.to_be_deconstructed(player.force) then
-                    -- Continue mining current target
-                    player.update_selected_entity(state.target.position)
-                    return
-                else
-                    -- Target no longer marked for deconstruction, stop mining
-                    player.mining_state = {mining = false}
-                    return
-                end
-            else
-                -- Target is invalid (was destroyed), explicitly stop mining
-                player.mining_state = {mining = false}
-                return
-            end
-        -- Tile mining
-        elseif state.position then
-            local tile = player.surface.get_tile(state.position)
-            if tile and tile.valid and tile.to_be_deconstructed(player.force) then
-                -- Continue mining current tile
-                player.update_selected_entity(state.position)
-                return
-            else
-                -- Tile no longer needs deconstruction, stop mining
-                player.mining_state = {mining = false}
-                return
-            end
+
+    if player.walking_state.walking then
+        if state.mining then
+            player.mining_state = {mining = false}
         end
+        return
     end
 
-    -- Only search for new targets when explicitly not mining
+    if state.mining then
+        if state.target then
+            if state.target.valid and state.target.to_be_deconstructed(player.force) then
+                player.update_selected_entity(state.target.position)
+                return
+            end
+
+            player.mining_state = {mining = false}
+            return
+        end
+
+        if state.position then
+            local tile = player.surface.get_tile(state.position)
+            if tile and tile.valid and tile.to_be_deconstructed(player.force) then
+                player.update_selected_entity(state.position)
+                return
+            end
+
+            player.mining_state = {mining = false}
+            return
+        end
+
+        player.mining_state = {mining = false}
+        return
+    end
+
+    local max_radius = settings.get_player_settings(player)["fbp-scan-radius"].value
     local entity = player.surface.find_entities_filtered{
         position = player.position,
         radius = math.min(player.build_distance, max_radius),
