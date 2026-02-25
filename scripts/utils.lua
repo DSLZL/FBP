@@ -18,6 +18,7 @@ function utils.ensure_player_storage(player_index)
     if not storage.players[player_index] then
         storage.players[player_index] = {
             active = false,
+            deconstruct_active = false,
             speed = 1,
             placement_acc = 0,
             scan_multiplier = 20,
@@ -31,6 +32,36 @@ function utils.ensure_player_storage(player_index)
                 auto_landfill = true
             }
         }
+    end
+
+    local p_data = storage.players[player_index]
+    if not p_data.features then
+        p_data.features = {
+            auto_place = true,
+            auto_upgrade = true,
+            auto_deconstruct = false,
+            auto_mine = false,
+            auto_modules = true,
+            auto_landfill = true
+        }
+    end
+
+    if p_data.deconstruct_active == nil then
+        if p_data.features.auto_deconstruct ~= nil then
+            p_data.deconstruct_active = p_data.features.auto_deconstruct and true or false
+        elseif p_data.features.auto_mine ~= nil then
+            p_data.deconstruct_active = p_data.features.auto_mine and true or false
+        else
+            p_data.deconstruct_active = false
+        end
+    end
+
+    if p_data.features.auto_deconstruct == nil then
+        p_data.features.auto_deconstruct = p_data.deconstruct_active
+    end
+
+    if p_data.features.auto_mine == nil then
+        p_data.features.auto_mine = p_data.deconstruct_active
     end
 end
 

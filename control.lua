@@ -11,7 +11,36 @@ local function ensure_player_storage(index)
 end
 
 local function check_active_permissions(player, index)
+    if not player or not player.valid then
+        core.check_active_permissions(player, index)
+        return
+    end
+
+    ensure_player_storage(index)
+    local p_data = storage.players[index]
+    local had_active = p_data.active and true or false
+
     core.check_active_permissions(player, index)
+
+    local allowed, reason = utils.is_allowed(player)
+    if allowed then return end
+
+    p_data = storage.players[index]
+    if not p_data then return end
+
+    local had_deconstruct = (p_data.deconstruct_active or (p_data.features and (p_data.features.auto_deconstruct or p_data.features.auto_mine))) and true or false
+    p_data.deconstruct_active = false
+    if p_data.features then
+        p_data.features.auto_deconstruct = false
+        p_data.features.auto_mine = false
+    end
+    player.set_shortcut_toggled("fbp-deconstruct-toggle", false)
+
+    if had_deconstruct and not had_active then
+        local msg_key = "fbp-message." .. (reason or "admin-only")
+        debug_print(player, {msg_key})
+        player.create_local_flying_text({text={msg_key}, create_at_cursor=true})
+    end
 end
 
 local function on_init()
@@ -46,15 +75,29 @@ local function on_configuration_changed(data)
                 auto_landfill = true
             }
         end
-        
+
+        if p_data.features.auto_deconstruct == nil then
+            p_data.features.auto_deconstruct = false
+        end
+
         if p_data.features.auto_mine == nil then
             p_data.features.auto_mine = false
         end
 
+        local migrated_deconstruct_state
         if p_data.deconstruct_active ~= nil then
-            p_data.features.auto_deconstruct = p_data.deconstruct_active
-            p_data.deconstruct_active = nil
+            migrated_deconstruct_state = p_data.deconstruct_active
+        elseif p_data.features.auto_deconstruct ~= nil then
+            migrated_deconstruct_state = p_data.features.auto_deconstruct
+        elseif p_data.features.auto_mine ~= nil then
+            migrated_deconstruct_state = p_data.features.auto_mine
+        else
+            migrated_deconstruct_state = false
         end
+
+        p_data.deconstruct_active = migrated_deconstruct_state and true or false
+        p_data.features.auto_deconstruct = p_data.deconstruct_active
+        p_data.features.auto_mine = p_data.deconstruct_active
         
         if player.valid then
             local settings_obj = settings.get_player_settings(player)
@@ -91,19 +134,28 @@ end
 local function on_tick(event)
     for index, player in pairs(game.connected_players) do
         local p_data = storage.players[index]
-        if p_data and p_data.active then
+        if p_data then
+            if p_data.deconstruct_active == nil then
+                p_data.deconstruct_active = (p_data.features and (p_data.features.auto_deconstruct or p_data.features.auto_mine)) and true or false
+            end
+
             local speed = p_data.speed or 1
             if speed < 1 then speed = 1 end
             
-            -- Staggered check: Distribute load across ticks based on player index
             if (event.tick + index) % speed == 0 then
-                if p_data.features.auto_place then
+                local deconstruct_active = p_data.deconstruct_active and true or false
+                if p_data.features then
+                    p_data.features.auto_deconstruct = deconstruct_active
+                    p_data.features.auto_mine = deconstruct_active
+                end
+
+                if p_data.active and p_data.features and p_data.features.auto_place then
                     core.process_auto_place(player, p_data, 5)
                 end
-                if p_data.features.auto_upgrade then
+                if p_data.active and p_data.features and p_data.features.auto_upgrade then
                     core.process_upgrades(player, 5)
                 end
-                if p_data.features.auto_deconstruct or p_data.features.auto_mine then
+                if deconstruct_active then
                     core.process_deconstruction(player)
                 end
             end
@@ -200,6 +252,10 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
             player.set_shortcut_toggled("fbp-deconstruct-toggle", false)
             if storage.players[event.player_index] then
                 storage.players[event.player_index].deconstruct_active = false
+                if storage.players[event.player_index].features then
+                    storage.players[event.player_index].features.auto_deconstruct = false
+                    storage.players[event.player_index].features.auto_mine = false
+                end
             end
             return
         end
@@ -208,6 +264,8 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
         local p_data = storage.players[event.player_index]
         local new_state = not (p_data.deconstruct_active or false)
         p_data.deconstruct_active = new_state
+        p_data.features.auto_deconstruct = new_state
+        p_data.features.auto_mine = new_state
 
         player.set_shortcut_toggled("fbp-deconstruct-toggle", new_state)
 
