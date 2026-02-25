@@ -9,9 +9,9 @@
 - **升级缺料非阻塞**: 升级目标缺料时改为跳过当前目标并继续处理后续可升级目标，避免卡点重试阻塞整轮。
 
 ## 0.2.0 (2026-02-17)
-### ♻️ Refactor
-- **Codebase Restructuring**: Major refactor of `control.lua`. The monolithic file has been split into modular components in the `scripts/` directory for better maintainability and extensibility.
-- **Performance Optimization**: Optimized entity search and tick processing logic to reduce UPS impact.
+### ♻️ 重构
+- **代码库重组**：对 `control.lua` 进行了重大重构。将单一的大文件拆分为 `scripts/` 目录下的模块化组件，以提高可维护性和可扩展性。
+- **性能优化**：优化了实体搜索和 tick 处理逻辑，以减少对每秒更新次数（UPS）的影响。
 
 ## 0.1.12 (2026-02-17)
 ### 🐛 修复
