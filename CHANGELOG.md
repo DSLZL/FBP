@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1 (2026-02-25)
+### 🐛 修复
+- **快捷栏与文案一致性**: 恢复并明确双快捷按钮语义。`fbp-toggle` 用于建造/升级，`fbp-deconstruct-toggle` 用于拆除并同步树木岩石自动开采。`fbp-open-config` 继续作为配置界面入口，README 与双语 locale 已同步。
+- **输入劫持修复**: 调整拆除流程状态管理，避免自动挖掘阶段出现持续强制选中导致的鼠标/移动输入被抢占。
+- **同坐标动作仲裁**: 同一坐标同轮只执行一个动作，优先级为 Place > Upgrade > Deconstruct，避免“刚放置立刻被拆除”等冲突。
+- **编辑器模式兼容**: 在 editor controller 下对自动流程执行硬禁用并做状态复位，减少卡顿并避免快捷状态假亮。
+- **升级缺料非阻塞**: 升级目标缺料时改为跳过当前目标并继续处理后续可升级目标，避免卡点重试阻塞整轮。
+
 ## 0.2.0 (2026-02-17)
 ### ♻️ Refactor
 - **Codebase Restructuring**: Major refactor of `control.lua`. The monolithic file has been split into modular components in the `scripts/` directory for better maintainability and extensibility.
