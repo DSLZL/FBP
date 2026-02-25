@@ -333,7 +333,16 @@ commands.add_command("fbp-check", {"message.diagnostic_command_desc"}, function(
     ensure_player_storage(cmd.player_index)
     local p_data = storage.players[cmd.player_index]
     player.print({"message.active_state", tostring(p_data.active)})
-    
+    player.print({"message.deconstruct_state", tostring(p_data.deconstruct_active)})
+
+    local allowed, reason = utils.is_allowed(player)
+    player.print({"message.permission_allowed", tostring(allowed)})
+    player.print({"message.permission_reason", reason or "none"})
+
+    if player.controller_type == defines.controllers.editor then
+        player.print({"message.editor_blocked"})
+    end
+
     local inventory = player.get_main_inventory()
     if inventory and inventory.valid then
         player.print({"message.inventory_valid"})
