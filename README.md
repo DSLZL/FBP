@@ -57,7 +57,14 @@ A: 在控制台输入命令 `/fbp-check`，它会打印出详细的诊断信息�
 
 ## 📦 安装
 
-从 [GitHub Releases](https://github.com/DSLZL/FBP/releases) 下载 `Factorio_Blueprint_Printer_<版本>_bundle.zip` 并解压，再把与游戏版本对应的内部 ZIP 放入 Factorio 的 `mods` 文件夹：2.0 使用 `2.0/` 下的包，2.1 使用 `2.1/` 下的包。不要把外层 bundle ZIP 直接放入 `mods`。两个安装包的内部名称与版本相同，请只安装当前游戏对应的一个包。它们共用 Lua 源码，区别仅在 `info.json` 的游戏版本声明。
+下载与你的游戏版本对应的安装包，将 ZIP 直接放入 Factorio 的 `mods` 文件夹，无需解压：
+
+| 游戏版本 | 0.3.0 安装包 |
+| --- | --- |
+| Factorio 2.0.77 及以上的 2.0 版本 | [下载 ZIP](https://github.com/DSLZL/FBP/releases/download/v0.3.0-factorio-2.0/Factorio_Blueprint_Printer_0.3.0.zip) |
+| Factorio 2.1 | [下载 ZIP](https://github.com/DSLZL/FBP/releases/download/v0.3.0/Factorio_Blueprint_Printer_0.3.0.zip) |
+
+只安装对应游戏版本的一个包，并保留文件名 `Factorio_Blueprint_Printer_0.3.0.zip`。两个包共用 Lua 源码，区别仅在 `info.json` 的游戏版本声明。
 
 2.0 包要求至少 2.0.77，以限定本次核对的物品和虚影接口版本；2.1 包沿用同一份运行时代码。
 
