@@ -7,10 +7,8 @@ data:extend({
     toggleable = true,
     icon = "__Factorio_Blueprint_Printer__/graphics/icons/icon_placement.png",
     icon_size = 64,
-    icon_mipmaps = 4,
     small_icon = "__Factorio_Blueprint_Printer__/graphics/icons/icon_placement.png",
-    small_icon_size = 64,
-    small_icon_mipmaps = 4
+    small_icon_size = 64
   },
   {
     type = "shortcut",
@@ -20,10 +18,8 @@ data:extend({
     toggleable = true,
     icon = "__Factorio_Blueprint_Printer__/graphics/icons/icon_deconstruction.png",
     icon_size = 64,
-    icon_mipmaps = 4,
     small_icon = "__Factorio_Blueprint_Printer__/graphics/icons/icon_deconstruction.png",
-    small_icon_size = 64,
-    small_icon_mipmaps = 4
+    small_icon_size = 64
   },
   {
     type = "custom-input",

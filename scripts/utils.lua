@@ -1,106 +1,56 @@
 local utils = {}
 
-function utils.debug_print(source_player, msg)
-    for _, p in pairs(game.connected_players) do
-        local debug_setting = settings.get_player_settings(p)["fbp-debug-mode"].value
-        if debug_setting == "all" then
-            p.print({"", "[FBP Debug] (" .. source_player.name .. ") ", msg})
-        elseif debug_setting == "personal" and p.index == source_player.index then
-            p.print({"", "[FBP Debug] ", msg})
+function utils.debug_print(source_player, message)
+    if not source_player or not source_player.valid then return end
+    for _, player in pairs(game.connected_players) do
+        local mode = settings.get_player_settings(player)["fbp-debug-mode"].value
+        if mode == "all" then
+            player.print({"", "[FBP Debug] (" .. source_player.name .. ") ", message})
+        elseif mode == "personal" and player.index == source_player.index then
+            player.print({"", "[FBP Debug] ", message})
         end
     end
 end
 
-function utils.ensure_player_storage(player_index)
-    if not storage.players then
-        storage.players = {}
-    end
-    if not storage.players[player_index] then
-        storage.players[player_index] = {
-            active = false,
-            deconstruct_active = false,
-            speed = 1,
-            placement_acc = 0,
-            scan_multiplier = 20,
-            scan_radius = 100,
-            features = {
-                auto_place = true,
-                auto_upgrade = true,
-                auto_deconstruct = false,
-                auto_mine = false,
-                auto_modules = true,
-                auto_landfill = true
-            }
-        }
-    end
-
-    local p_data = storage.players[player_index]
-    if not p_data.features then
-        p_data.features = {
-            auto_place = true,
-            auto_upgrade = true,
-            auto_deconstruct = false,
-            auto_mine = false,
-            auto_modules = true,
-            auto_landfill = true
-        }
-    end
-
-    if p_data.deconstruct_active == nil then
-        if p_data.features.auto_deconstruct ~= nil then
-            p_data.deconstruct_active = p_data.features.auto_deconstruct and true or false
-        elseif p_data.features.auto_mine ~= nil then
-            p_data.deconstruct_active = p_data.features.auto_mine and true or false
-        else
-            p_data.deconstruct_active = false
-        end
-    end
-
-    if p_data.features.auto_deconstruct == nil then
-        p_data.features.auto_deconstruct = p_data.deconstruct_active
-    end
-
-    if p_data.features.auto_mine == nil then
-        p_data.features.auto_mine = p_data.deconstruct_active
-    end
+function utils.same_position(a, b)
+    return a and b and a.x == b.x and a.y == b.y
 end
 
-function utils.is_allowed(player)
-    local player_settings = settings.get_player_settings(player)
-    if not player_settings then return false, "unknown-error" end
-    
-    if player_settings["fbp-enable-for-me"] and not player_settings["fbp-enable-for-me"].value then
-        return false, "disabled-by-user"
+function utils.position_key(surface, position)
+    return surface.index .. ":" .. math.floor(position.x) .. ":" .. math.floor(position.y)
+end
+
+function utils.is_consumed(context, surface, position)
+    return context and context[utils.position_key(surface, position)] == true
+end
+
+function utils.consume(context, surface, position)
+    if context then context[utils.position_key(surface, position)] = true end
+end
+
+function utils.return_items(inventory, surface, position, stack)
+    if stack.count <= 0 then return end
+    local inserted = inventory.insert(stack)
+    if inserted < stack.count then
+        surface.spill_item_stack({
+            position = position,
+            stack = {name = stack.name, quality = stack.quality, count = stack.count - inserted, health = stack.health},
+            enable_looted = true,
+            allow_belts = false
+        })
     end
-    
-    if player.admin then return true end
-    
-    if settings.global["fbp-allow-others"] and settings.global["fbp-allow-others"].value then
-        return true
-    end
-    
-    return false, "admin-only"
 end
 
 local CONTAINER_TYPES = {
-    ["container"] = true,
-    ["logistic-container"] = true,
-    ["infinity-container"] = true,
-    ["linked-container"] = true,
-    ["cargo-wagon"] = true,
-    ["storage-tank"] = true,
+    ["container"] = true, ["logistic-container"] = true, ["infinity-container"] = true,
+    ["linked-container"] = true, ["cargo-wagon"] = true, ["storage-tank"] = true
 }
 
-function utils.is_container_type(entity)
-    return CONTAINER_TYPES[entity.type] or false
-end
-
-function utils.is_inventory_nearly_full(player, threshold)
+function utils.container_inventory_full(player, entity)
+    if not CONTAINER_TYPES[entity.type] then return false end
     local inventory = player.get_main_inventory()
-    if not inventory or not inventory.valid then return true end
-    local empty = inventory.count_empty_stacks()
-    local total = #inventory
-    return (empty / total) < (1 - threshold)
+    return not inventory or not inventory.valid or #inventory == 0
+        or inventory.count_empty_stacks() / #inventory < 0.1
 end
 
 return utils

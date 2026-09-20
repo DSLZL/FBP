@@ -1,0 +1,10 @@
+.sisyphus/
+.ace-tool/
+*.zip
+.vscode/
+.ruff_cache/
+AGENTS.md
+editorextensions/
+dist/
+__pycache__/
+*.pyc

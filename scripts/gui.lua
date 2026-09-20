@@ -1,57 +1,43 @@
-local utils = require("scripts.utils")
+local player_state = require("scripts.player_state")
 
 local gui = {}
+local FEATURES = {"auto_place", "auto_upgrade", "auto_deconstruct", "auto_modules", "auto_landfill"}
 
-gui.FEATURE_LABELS = {
-    {key = "auto_place", caption = {"fbp-gui.auto-place"}},
-    {key = "auto_upgrade", caption = {"fbp-gui.auto-upgrade"}},
-    {key = "auto_deconstruct", caption = {"fbp-gui.auto-deconstruct"}},
-    {key = "auto_modules", caption = {"fbp-gui.auto-modules"}},
-    {key = "auto_landfill", caption = {"fbp-gui.auto-landfill"}}
-}
-
-function gui.create_config_gui(player)
-    if player.gui.screen["fbp-config-frame"] then return end
-
-    local player_index = player.index
-    utils.ensure_player_storage(player_index)
-    local p_data = storage.players[player_index]
-
-    local frame = player.gui.screen.add{
-        type = "frame",
-        name = "fbp-config-frame",
-        caption = "FBP Configuration",
-        direction = "vertical"
-    }
-    frame.auto_center = true
-
-    frame.add{
-        type = "button",
-        name = "fbp-config-close",
-        caption = "Close"
-    }
-
-    for _, feat in pairs(gui.FEATURE_LABELS) do
-        frame.add{
-            type = "checkbox",
-            name = "fbp-feature-" .. feat.key,
-            caption = feat.caption,
-            state = p_data.features[feat.key] or false
-        }
+function gui.refresh(player)
+    local frame = player.gui.screen["fbp-config-frame"]
+    if not frame then return end
+    local state = player_state.get(player.index)
+    for _, key in ipairs(FEATURES) do
+        local checkbox = frame["fbp-feature-" .. key]
+        if checkbox then checkbox.state = state.features[key] end
     end
 end
 
 function gui.destroy_config_gui(player)
     local frame = player.gui.screen["fbp-config-frame"]
-    if frame then
-        frame.destroy()
+    if frame then frame.destroy() end
+end
+
+function gui.create_config_gui(player)
+    if player.gui.screen["fbp-config-frame"] then return end
+    local state = player_state.get(player.index)
+    local frame = player.gui.screen.add{
+        type = "frame", name = "fbp-config-frame",
+        caption = {"fbp-gui.config-title"}, direction = "vertical"
+    }
+    frame.auto_center = true
+    frame.add{type = "button", name = "fbp-config-close", caption = {"fbp-gui.close"}}
+    for _, key in ipairs(FEATURES) do
+        frame.add{
+            type = "checkbox", name = "fbp-feature-" .. key,
+            caption = {"fbp-gui." .. key:gsub("_", "-")}, state = state.features[key]
+        }
     end
 end
 
 function gui.toggle_config_gui(event)
     local player = game.get_player(event.player_index)
-    if not player then return end
-
+    if not player or not player.valid then return end
     if player.gui.screen["fbp-config-frame"] then
         gui.destroy_config_gui(player)
     else
@@ -61,30 +47,20 @@ end
 
 function gui.handle_gui_click(event)
     local element = event.element
-    if not element or not element.valid then return end
-    if element.name == "fbp-config-close" then
-        local player = game.get_player(event.player_index)
-        if player then
-            gui.destroy_config_gui(player)
-        end
-    end
+    if not element or not element.valid or element.name ~= "fbp-config-close" then return end
+    local player = game.get_player(event.player_index)
+    if player and player.valid then gui.destroy_config_gui(player) end
 end
 
 function gui.handle_gui_checked_state_changed(event)
     local element = event.element
     if not element or not element.valid then return end
-    if not element.name or not element.name:find("^fbp%-feature%-") then return end
-
+    local key = element.name:match("^fbp%-feature%-(.+)$")
+    if not key then return end
     local player = game.get_player(event.player_index)
-    if not player then return end
-
-    utils.ensure_player_storage(event.player_index)
-    local p_data = storage.players[event.player_index]
-
-    local feature_key = element.name:gsub("^fbp%-feature%-", "")
-    if p_data.features[feature_key] ~= nil then
-        p_data.features[feature_key] = element.state
-    end
+    if not player or not player.valid then return end
+    player_state.set_feature(player, key, element.state)
+    gui.refresh(player)
 end
 
 return gui
