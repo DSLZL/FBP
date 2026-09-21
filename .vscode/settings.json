@@ -1,0 +1,11 @@
+{
+  "files.exclude": {
+    "**/.trellis/**/info.json": true,
+    "**/.codex/**/info.json": true
+  },
+  "files.watcherExclude": {
+    "**/.trellis/**/info.json": true,
+    "**/.codex/**/info.json": true
+  },
+  "factorio.package.tagName": "mod-portal-$VERSION"
+}

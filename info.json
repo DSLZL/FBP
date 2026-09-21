@@ -6,5 +6,18 @@
   "factorio_version": "2.0",
   "dependencies": ["base >= 2.0.77"],
   "description": "Automatically builds ghost entities near the player.",
-  "thumbnail": "thumbnail.png"
+  "thumbnail": "thumbnail.png",
+  "package": {
+    "git_publish_branch": "main",
+    "ignore": [
+      "AGENTS.md",
+      "mod-list.json",
+      "*.py",
+      "*.pyc",
+      "__pycache__/**",
+      "dist/**",
+      "docs/**",
+      "tests/**"
+    ]
+  }
 }

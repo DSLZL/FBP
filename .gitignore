@@ -1,7 +1,8 @@
 .sisyphus/
 .ace-tool/
 *.zip
-.vscode/
+.vscode/*
+!.vscode/settings.json
 .ruff_cache/
 AGENTS.md
 editorextensions/
