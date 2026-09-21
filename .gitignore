@@ -8,3 +8,7 @@ editorextensions/
 dist/
 __pycache__/
 *.pyc
+.agents/
+.codegraph/
+.codex/
+.trellis/
