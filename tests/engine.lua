@@ -1,6 +1,6 @@
 -- Installed only into disposable test copies by run_engine.py.
 local validation = {}
-local construction, player_state, deconstruction, gui, core
+local construction, player_state, deconstruction, gui, core, scan
 
 local function check(value, message)
     assert(value, "FBP_VALIDATION: " .. message)
@@ -54,6 +54,7 @@ end
 local function clear(player)
     player.mining_state = {mining = false}
     storage.players[player.index].auto_mining = nil
+    storage.players[player.index].scans = nil
     for _, entity in pairs(player.surface.find_entities_filtered({area = {{-10, -10}, {10, 10}}, limit = 1000})) do
         if entity.type ~= "character" then entity.destroy() end
     end
@@ -100,6 +101,26 @@ local function operations(player)
     check(not player.mining_state.mining, "repeated master pause stops mining")
     pass("native master shortcut pause and resume")
     state.active, state.deconstruct_active = false, false
+    clear(player)
+    local build_bonus = player.character_build_distance_bonus
+    player.character_build_distance_bonus = build_bonus + 30
+    local far = player.surface.create_entity({name = "wooden-chest", position = {0, -20}, force = player.force})
+    local near = player.surface.create_entity({name = "wooden-chest", position = {3, 0}, force = player.force})
+    check(far.order_deconstruction(player.force) and near.order_deconstruction(player.force), "reachability targets marked")
+    check(player.build_distance > 20 and not player.can_reach_entity(far) and player.can_reach_entity(near),
+        "build range includes an unreachable mining target")
+    player.update_selected_entity(far.position)
+    player.mining_state = {mining = true, position = far.position}
+    state.auto_mining = {surface = player.surface, position = far.position, entity = far}
+    check(player.selected == far and player.mining_state.mining, "unreachable owned mining fixture")
+    deconstruction.process(player, state, {})
+    check(state.auto_mining and state.auto_mining.entity == near and player.selected == near,
+        "unreachable owned target yields to reachable mining")
+    player_state.stop_mining(player, state)
+    far.destroy()
+    near.destroy()
+    player.character_build_distance_bonus = build_bonus
+    pass("native unreachable mining target recovery")
     state.features.auto_modules, state.features.auto_landfill = true, true
     local surface = player.surface
     local inventory = clear(player)
@@ -189,11 +210,14 @@ function validation.install(phase)
         deconstruction = require("scripts.deconstruction")
         gui = require("scripts.gui")
         core = require("scripts.core")
+        scan = require("scripts.scan")
     end
     local previous = script.get_event_handler(defines.events.on_tick)
     local started, finished, mining_stage, target, started_tick = false, false, 0, nil, nil
     local function finish(player)
+        local scans = storage.players[player.index].scans
         preferences(player)
+        storage.players[player.index].scans = scans
         -- Synchronize with either the old or refactored runtime before saving.
         player.set_shortcut_toggled("fbp-toggle", true)
         player.set_shortcut_toggled("fbp-deconstruct-toggle", false)
@@ -213,7 +237,18 @@ function validation.install(phase)
                 if phase == "seed" then prepare(player); finish(player); return end
                 assert_preferences(player)
                 pass(phase .. " saved preferences")
-                if phase == "reload" then finish(player); return end
+                if phase == "reload" then
+                    local state = storage.players[player.index]
+                    local entity = scan.entities(player, state, "save-probe", {type = "entity-ghost", force = player.force})()
+                    local tile = scan.tiles(player, state, "save-tiles", {to_be_deconstructed = true, force = player.force})()
+                    local expected = storage.scan_expected
+                    check(entity and entity.position.x == expected.entity.x and entity.position.y == expected.entity.y,
+                        "cached entity scan resumes after reload")
+                    check(tile and tile.position.x == expected.tile.x and tile.position.y == expected.tile.y,
+                        "cached tile scan resumes after reload")
+                    pass("native entity and tile scan cursors survive reload")
+                    finish(player); return
+                end
                 prepare(player)
                 operations(player)
             end
@@ -249,6 +284,18 @@ function validation.install(phase)
                 deconstruction.process(player, state, {})
                 check(not target.valid and inventory.get_item_count("iron-plate") == 7, "marked ground items collected")
                 pass("marked ground items")
+                clear(player)
+                for x = 2, 4 do
+                    player.surface.create_entity({name = "entity-ghost", inner_name = "wooden-chest",
+                        position = {x, 0}, force = player.force})
+                    player.surface.set_tiles({{name = "stone-path", position = {x, 2}}})
+                    check(player.surface.get_tile(x, 2).order_deconstruction(player.force), "scan save tile marked")
+                end
+                check(scan.entities(player, state, "save-probe", {type = "entity-ghost", force = player.force})(), "scan save entity found")
+                check(scan.tiles(player, state, "save-tiles", {to_be_deconstructed = true, force = player.force})(), "scan save tile found")
+                local entities, tiles = state.scans["save-probe"], state.scans["save-tiles"]
+                check(entities.items[entities.next] and tiles.items[tiles.next], "pending native scan batches")
+                storage.scan_expected = {entity = entities.items[entities.next].position, tile = tiles.items[tiles.next].position}
                 finish(player)
                 return
             end

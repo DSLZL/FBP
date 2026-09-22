@@ -1,4 +1,5 @@
 local utils = require("scripts.utils")
+local scan = require("scripts.scan")
 
 local construction = {}
 
@@ -102,13 +103,8 @@ end
 function construction.place(player, state, limit, context)
     local inventory = player.get_main_inventory()
     if not inventory or not inventory.valid then return end
-    local scan_limit = limit * state.scan_multiplier
-    local ghosts = player.surface.find_entities_filtered({
-        type = "entity-ghost", force = player.force, position = player.position,
-        radius = math.min(player.build_distance, state.scan_radius), limit = scan_limit
-    })
     local placed = 0
-    for _, ghost in pairs(ghosts) do
+    for ghost in scan.entities(player, state, "place", {type = "entity-ghost", force = player.force}) do
         if ghost.valid and not utils.is_consumed(context, ghost.surface, ghost.position) then
             local surface, position = ghost.surface, ghost.position
             if place_ghost(player, state, ghost, inventory) then
@@ -118,23 +114,13 @@ function construction.place(player, state, limit, context)
             end
         end
     end
-    if #ghosts >= scan_limit and placed < limit then
-        state.scan_multiplier = math.min(state.scan_multiplier + 10, 200)
-    else
-        state.scan_multiplier = math.max(state.scan_multiplier - 5, 5)
-    end
 end
 
 function construction.upgrade(player, state, limit, context)
     local inventory = player.get_main_inventory()
     if not inventory or not inventory.valid then return end
-    local entities = player.surface.find_entities_filtered({
-        force = player.force, position = player.position,
-        radius = math.min(player.build_distance, state.scan_radius), limit = 100,
-        to_be_upgraded = true
-    })
     local upgraded, attempted = 0, {}
-    for _, entity in pairs(entities) do
+    for entity in scan.entities(player, state, "upgrade", {force = player.force, to_be_upgraded = true}) do
         if entity.valid and entity.to_be_upgraded() then
             local surface, position = entity.surface, entity.position
             local key = utils.position_key(surface, position)

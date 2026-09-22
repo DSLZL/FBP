@@ -79,11 +79,11 @@ def main():
                 while time.monotonic() < deadline:
                     failed = user / "script-output" / f"fbp-{phase}.failed"
                     marker = user / "script-output" / f"fbp-{phase}.ok"
-                    saves = list((user / "saves").glob(f"*fbp-{phase}*.zip"))
+                    save = user / "saves" / f"_autosave-fbp-{phase}.zip"
                     if failed.exists():
                         raise RuntimeError(failed.read_text(encoding="utf-8"))
-                    if marker.exists() and saves and zipfile.is_zipfile(saves[0]):
-                        previous_save = saves[0]
+                    if marker.exists() and save.is_file() and zipfile.is_zipfile(save):
+                        previous_save = save
                         break
                     if process.poll() is not None:
                         raise RuntimeError(f"{phase}: engine exited before the validation save was created")

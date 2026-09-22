@@ -30,7 +30,7 @@ function player_state.get(index)
     if state.active == nil then state.active = false end
     state.speed = state.speed or 1
     state.scan_radius = state.scan_radius or 100
-    state.scan_multiplier = state.scan_multiplier or 20
+    state.scan_multiplier = state.scan_multiplier or 20 -- Legacy save field; scanning no longer uses it.
     state.placement_acc = state.placement_acc or 0
     state.features.auto_deconstruct = state.deconstruct_active
     state.features.auto_mine = state.deconstruct_active
@@ -113,6 +113,7 @@ function player_state.set_active(player, key, enabled)
         end
         return state
     end
+    if enabled and not state[key] then state.scans = nil end
     state[key] = enabled
     if key == "deconstruct_active" then
         state.features.auto_deconstruct = enabled

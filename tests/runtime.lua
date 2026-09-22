@@ -59,15 +59,23 @@ local function inventory(items, capacity)
     return inv
 end
 
+local function assert_bounded(filter)
+    if filter.limit and filter.limit > 0 then return end
+    local area = filter.area
+    assert(area and area[2][1] - area[1][1] <= 32 and area[2][2] - area[1][2] <= 32, "unbounded scan")
+end
+
 local function surface(index)
     local result = {index = index or 1, valid = true, queries = {}, spilled = {}}
     result.find_entities_filtered = function(filter)
-        assert(filter.limit and filter.limit > 0, "unbounded entity scan")
-        result.queries[#result.queries + 1] = filter
+        assert_bounded(filter)
+        local query = {}
+        for key, value in pairs(filter) do query[key] = value end
+        result.queries[#result.queries + 1] = query
         return {}
     end
     result.find_tiles_filtered = function(filter)
-        assert(filter.limit and filter.limit > 0, "unbounded tile scan")
+        assert_bounded(filter)
         return {}
     end
     result.spill_item_stack = function(request)
@@ -93,6 +101,7 @@ local function player(index, player_inventory)
     result.print = function(message) result.messages[#result.messages + 1] = message end
     result.create_local_flying_text = function() end
     result.update_selected_entity = function(position) result.selected_position = position end
+    result.can_reach_entity = function(entity) return entity.reachable ~= false end
     return result
 end
 
@@ -151,11 +160,11 @@ test("multiplayer A/B/C joins and leaves preserve state association", function()
         local expected = {}
         for _, p in ipairs(online) do
             p.surface.queries = {}
-            expected[p.index] = storage.players[p.index].active and 1 or 0
+            expected[p.index] = storage.players[p.index].active
         end
         handlers.on_tick({tick = 30})
         for _, p in ipairs(online) do
-            equal(placement_scans(p), expected[p.index], "player " .. p.index .. " placement scans")
+            equal(placement_scans(p) > 0, expected[p.index], "player " .. p.index .. " placement scans")
         end
         equal(storage.players[2].active, false, "C preference")
     end
@@ -176,9 +185,13 @@ test("sparse IDs keep each player's speed, radius and tick phase", function()
         for _, p in ipairs(game.connected_players) do p.surface.queries = {} end
         handlers.on_tick({tick = tick})
         for _, p in ipairs(game.connected_players) do
-            equal(placement_scans(p), (tick + p.index) % 3 == 0 and 1 or 0, "stable phase " .. p.index)
+            equal(placement_scans(p) > 0, (tick + p.index) % 3 == 0, "stable phase " .. p.index)
             for _, query in ipairs(p.surface.queries) do
-                equal(query.radius, p.settings["fbp-scan-radius"].value, "personal radius")
+                local radius = p.settings["fbp-scan-radius"].value
+                if query.area then
+                    assert(query.area[1][1] >= -radius and query.area[1][2] >= -radius
+                        and query.area[2][1] <= radius and query.area[2][2] <= radius, "personal radius")
+                else equal(query.radius, radius, "personal radius") end
             end
         end
     end
@@ -373,17 +386,194 @@ if not multiplayer_only then
     end
 
     local function ghost_for(p, quality)
-        local ghost = {valid = true, surface = p.surface, position = {x = 2, y = 2},
+        local ghost = {valid = true, type = "entity-ghost", surface = p.surface, force = p.force, position = {x = 2, y = 2},
             ghost_name = "assembling-machine-2", quality = {name = quality or "normal"},
             ghost_prototype = {items_to_place_this = {{name = "assembling-machine-2", count = 1}}},
             bounding_box = {{1, 1}, {4, 4}}}
         p.surface.find_entities_filtered = function(filter)
-            assert(filter.limit > 0)
+            assert_bounded(filter)
             equal(filter.force, p.force)
             return {ghost}
         end
         return ghost
     end
+
+    local function targets_for(p, targets)
+        for _, target in ipairs(targets) do target.surface = target.surface or p.surface end
+        p.surface.find_entities_filtered = function(filter)
+            assert_bounded(filter)
+            p.surface.queries[#p.surface.queries + 1] = filter
+            local result = {}
+            local types = type(filter.type) == "table" and filter.type or {filter.type}
+            for _, target in ipairs(targets) do
+                local matches_type = not filter.type
+                if target.valid then
+                    for _, kind in ipairs(types) do matches_type = matches_type or target.type == kind end
+                end
+                if target.valid and matches_type and (not filter.force or target.force == filter.force or target.force.name == filter.force) then
+                    local position, inside = target.position, true
+                    if filter.area then
+                        local area = filter.area
+                        inside = position.x >= area[1][1] and position.x <= area[2][1]
+                            and position.y >= area[1][2] and position.y <= area[2][2]
+                    elseif filter.radius then
+                        local dx, dy = position.x - filter.position.x, position.y - filter.position.y
+                        inside = dx * dx + dy * dy <= filter.radius * filter.radius
+                    end
+                    if inside then
+                        result[#result + 1] = target
+                        if filter.limit and #result >= filter.limit then break end
+                    end
+                end
+            end
+            return result
+        end
+    end
+
+    test("bounded scanning reaches work behind 1200 unavailable ghosts", function()
+        environment()
+        local p, state = game.players[1], storage.players[1]
+        local targets = {}
+        for i = 1, 1201 do targets[i] = ghost_for(p) end
+        local available = targets[#targets]
+        available.ghost_prototype = {items_to_place_this = {{name = "wooden-chest", count = 1}}}
+        available.revive = function() invalidate(available); return {}, {valid = true, get_module_inventory = function() end} end
+        p.inventory = inventory({["wooden-chest:normal"] = 1})
+        targets_for(p, targets)
+        local lookups, get_count = 0, p.inventory.get_item_count
+        p.inventory.get_item_count = function(stack) lookups = lookups + 1; return get_count(stack) end
+        for _ = 1, 20 do
+            lookups, p.surface.queries = 0, {}
+            require("scripts.construction").place(p, state, 5, {})
+            assert(lookups <= 102, "candidate work grew beyond fixed budget") -- A successful removal reads inventory twice more.
+            assert(#p.surface.queries <= 8, "too many spatial queries")
+            if not available.valid then break end
+        end
+        equal(available.valid, false, "later affordable ghost must not starve")
+        equal(state.scan_multiplier, 20, "legacy multiplier is inert")
+    end)
+
+    test("upgrade and demolition scans advance beyond blocked prefixes", function()
+        environment()
+        local p, state = game.players[1], storage.players[1]
+        local targets = {}
+        for i = 1, 251 do
+            local item = i == 251 and "fast-transport-belt" or "express-transport-belt"
+            targets[i] = {valid = true, surface = p.surface, force = p.force, position = {x = (i - 1) % 25 + 0.5, y = math.floor((i - 1) / 25) + 0.5},
+                direction = 0, type = "transport-belt", mirroring = false, to_be_upgraded = function() return true end,
+                get_upgrade_target = function() return {name = item, items_to_place_this = {{name = item, count = 1}}} end}
+        end
+        targets_for(p, targets)
+        p.inventory = inventory({["fast-transport-belt:normal"] = 1})
+        p.surface.create_entity = function() invalidate(targets[251]); return {valid = true} end
+        for _ = 1, 10 do require("scripts.construction").upgrade(p, state, 5, {}) end
+        equal(targets[251].valid, false, "later affordable upgrade")
+        for i = 1, 21 do
+            targets[i] = {valid = true, surface = p.surface, force = p.force, type = "simple-entity", minable = i == 21,
+                position = {x = i, y = 0}, to_be_deconstructed = function() return true end}
+        end
+        for i = #targets, 22, -1 do targets[i] = nil end
+        p.update_selected_entity = function() p.selected = targets[21] end
+        require("scripts.deconstruction").process(p, state, {})
+        equal(p.selected, targets[21], "blocked mining candidates must not hide later work")
+        equal(p.mining_state.mining, true)
+    end)
+
+    test("unreachable mining targets yield to reachable work and can be retried later", function()
+        for _, kind in ipairs({"container", "tree", "simple-entity"}) do
+            for _, retained in ipairs({false, true}) do
+                environment()
+                local p, state = game.players[1], storage.players[1]
+                p.position = {x = 16, y = 16}
+                local force = kind == "container" and p.force or {name = "neutral"}
+                local far = {valid = true, force = force, type = kind, minable = true, reachable = false,
+                    position = {x = 16, y = 2}, to_be_deconstructed = function() return true end}
+                local near = {valid = true, force = force, type = kind, minable = true,
+                    position = {x = 18, y = 16}, to_be_deconstructed = function() return true end}
+                targets_for(p, {far, near})
+                p.update_selected_entity = function(position)
+                    assert(position ~= far.position or far.reachable, "must skip unreachable target before selecting it")
+                    p.selected = position == far.position and far or near
+                end
+                if retained then
+                    p.selected = far
+                    p.mining_state = {mining = true, position = far.position}
+                    state.auto_mining = {surface = p.surface, position = far.position, entity = far}
+                end
+                local deconstruct, context = require("scripts.deconstruction"), {}
+                deconstruct.process(p, state, context)
+                equal(p.selected, near, kind .. " picks reachable work")
+                equal(state.auto_mining.entity, near, "release unreachable owned target")
+                equal(require("scripts.utils").is_consumed(context, p.surface, far.position), false)
+                near.valid, far.reachable = false, true
+                for _ = 1, 10 do
+                    deconstruct.process(p, state, {})
+                    if state.auto_mining and state.auto_mining.entity == far then break end
+                end
+                equal(state.auto_mining.entity, far, "target becomes eligible when it is reachable")
+            end
+        end
+    end)
+
+    test("scan progress survives module reload and rejects stale cached targets", function()
+        environment({1, 3})
+        local p, state = game.players[1], storage.players[1]
+        p.build_distance = 5
+        local targets = {}
+        for i = 1, 105 do targets[i] = {valid = true, force = p.force, position = {x = 1, y = 1}, id = i} end
+        targets_for(p, targets)
+        local scan = require("scripts.scan")
+        local filter = {force = p.force}
+        local next_target = scan.entities(p, state, "probe", filter)
+        equal(next_target(), targets[1])
+        targets[2].valid = false
+        targets[3].force = {name = "other"}
+        targets[4].position = {x = 4, y = 4} -- Inside the square, outside the effective circle.
+        targets[6].surface = surface(25)
+        package.loaded["scripts.scan"] = nil
+        scan = require("scripts.scan")
+        next_target = scan.entities(p, state, "probe", {force = p.force})
+        equal(next_target(), targets[5], "continue saved cursor and skip stale targets")
+        equal(next_target(), targets[7], "ignore cached entity moved to another surface")
+        equal(storage.players[3].scans, nil, "player state isolation")
+        p.position = {x = 64, y = 0}
+        targets[105].position = {x = 65, y = 0}
+        equal(scan.entities(p, state, "probe", {force = p.force})(), targets[105], "movement resets search")
+        p.surface = surface(99)
+        local fresh = {valid = true, force = p.force, position = {x = 66, y = 0}}
+        targets_for(p, {fresh})
+        equal(scan.entities(p, state, "probe", {force = p.force})(), fresh, "surface change resets search")
+        p.force = {name = "new-force"}
+        fresh.force = p.force
+        equal(scan.entities(p, state, "probe", {force = p.force})(), fresh, "force change resets search")
+        state.scan_radius = 1
+        equal(scan.entities(p, state, "probe", {force = p.force})(), nil, "radius change excludes cached target")
+    end)
+
+    test("spatial sweep covers negative coordinates and cell borders exactly once", function()
+        environment()
+        local p, state = game.players[1], storage.players[1]
+        state.scan_radius = 50
+        local targets = {}
+        for _, position in ipairs({{0, 0}, {32, 0}, {-32, 0}, {0, -32}, {-32, -32}, {49, 0}, {-49, 0}, {0, -49}, {49, 49}}) do
+            targets[#targets + 1] = {valid = true, force = p.force, position = {x = position[1], y = position[2]}}
+        end
+        targets_for(p, targets)
+        local seen, count = {}, 0
+        for _ = 1, 10 do
+            p.surface.queries = {}
+            for target in require("scripts.scan").entities(p, state, "probe", {force = p.force}) do
+                assert(not seen[target], "cell border returned twice in one sweep")
+                seen[target] = true
+                count = count + 1
+            end
+            assert(#p.surface.queries <= 8)
+            if count == 8 then break end
+        end
+        equal(count, 8, "all reachable cells must be visited")
+        for i = 1, 8 do assert(seen[targets[i]], "missed reachable cell") end
+        equal(seen[targets[9]], nil, "outside circular range")
+    end)
 
     test("revival uses exact quality and health, handles overflow, and never rereads ghost", function()
         environment()
@@ -413,6 +603,7 @@ if not multiplayer_only then
         require("scripts.construction").place(p, state, 5, {})
         equal(p.inventory.get_item_count("assembling-machine-2"), 1)
         p.surface.find_tiles_filtered = function() return {{position = {x = 2, y = 2}}} end
+        state.scans = nil
         ghost.revive = function() error("must not revive without landfill") end
         require("scripts.construction").place(p, state, 5, {})
         equal(p.inventory.get_item_count("assembling-machine-2"), 1)
@@ -471,8 +662,8 @@ if not multiplayer_only then
     test("automatic mining yields to walking and preserves a different manual target", function()
         environment()
         local p, state = game.players[1], storage.players[1]
-        local entity = {valid = true, type = "tree", minable = true, position = {x = 2, y = 2}, to_be_deconstructed = function() return true end}
-        p.surface.find_entities_filtered = function() return {entity} end
+        local entity = {valid = true, surface = p.surface, force = p.force, type = "tree", minable = true, position = {x = 2, y = 2}, to_be_deconstructed = function() return true end}
+        p.surface.find_entities_filtered = function(filter) return filter.force == p.force and {entity} or {} end
         p.update_selected_entity = function() p.selected = entity end
         local deconstruct = require("scripts.deconstruction")
         deconstruct.process(p, state, {})
@@ -494,7 +685,7 @@ if not multiplayer_only then
         environment()
         local p, state = game.players[1], storage.players[1]
         p.inventory = inventory({}, 2)
-        local ground = {valid = true, position = {x = 2, y = 2},
+        local ground = {valid = true, surface = p.surface, position = {x = 2, y = 2},
             stack = {name = "iron-plate", quality = "normal", count = 5},
             to_be_deconstructed = function() return true end}
         ground.destroy = function() invalidate(ground) end
@@ -506,7 +697,10 @@ if not multiplayer_only then
         require("scripts.deconstruction").process(p, state, context)
         equal(ground.stack.count, 3)
         p.inventory.capacity = 3
-        require("scripts.deconstruction").process(p, state, {})
+        for _ = 1, 10 do
+            require("scripts.deconstruction").process(p, state, {})
+            if not ground.valid then break end
+        end
         equal(ground.valid, false)
         equal(p.inventory.get_item_count("iron-plate"), 5)
     end)
@@ -514,8 +708,8 @@ if not multiplayer_only then
     test("tile deconstruction uses native inventory-aware mining and skips tile proxies", function()
         environment()
         local p, state = game.players[1], storage.players[1]
-        local tile = {valid = true, position = {x = 2, y = 2}, to_be_deconstructed = function() return true end}
-        local proxy = {valid = true, type = "deconstructible-tile-proxy", minable = true,
+        local tile = {valid = true, surface = p.surface, position = {x = 2, y = 2}, to_be_deconstructed = function() return true end}
+        local proxy = {valid = true, surface = p.surface, force = p.force, type = "deconstructible-tile-proxy", minable = true,
             position = tile.position, to_be_deconstructed = function() return true end}
         p.surface.find_entities_filtered = function() return {proxy} end
         p.surface.find_tiles_filtered = function() return {tile} end
