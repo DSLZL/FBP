@@ -57,7 +57,9 @@ A: 在控制台输入命令 `/fbp-check`，它会打印出详细的诊断信息�
 
 ## 📦 安装
 
-下载与你的游戏版本对应的安装包，将 ZIP 直接放入 Factorio 的 `mods` 文件夹，无需解压：
+推荐在游戏的模组界面搜索 **Factorio Blueprint Printer** 并安装或更新；游戏会选择与当前 2.0 / 2.1 版本兼容的发行包。也可在 [Mod Portal 下载列表](https://mods.factorio.com/mod/Factorio_Blueprint_Printer/downloads) 按游戏版本选择 ZIP，直接放入 Factorio 的 `mods` 文件夹，无需解压。
+
+GitHub 保留以下 0.3.0 历史安装包：
 
 | 游戏版本 | 0.3.0 安装包 |
 | --- | --- |
@@ -83,6 +85,27 @@ lua tests/runtime.lua                                 # Lua 5.2 行为回归
 ```
 
 打包只使用 Python 标准库，不修改源码中的 `info.json`，不包含测试、开发工具或旧 ZIP。运行时按职责分为玩家状态、周期调度、建造升级、拆除开采和 GUI；持久状态统一由 `scripts/player_state.lua` 管理。
+
+### 发布到 Mod Portal（同时支持 2.0 / 2.1）
+
+在 VS Code 的 **Factorio Mod Packages** 面板中，选择仓库根目录的 **Publish Mod**。先提交修改，并通过 **Factorio: Set API Key** 保存具有 `ModPortal: Upload Mods` 权限的 API key。发布钩子需要 Python 3；仓库默认使用 Windows 的 `py -3`。
+
+两个游戏版本共用源码和 Mod 名称，门户版本号按偶数 / 奇数补丁号成对分配：
+
+| 源码版本 | Factorio 2.0 包 | Factorio 2.1 包 | 发布后的源码版本 |
+| --- | --- | --- | --- |
+| 0.3.2 | 0.3.2 | 0.3.3 | 0.3.4 |
+| 0.3.4 | 0.3.4 | 0.3.5 | 0.3.6 |
+
+源码 `info.json` 保持 `factorio_version: "2.0"`，补丁号必须为偶数。手动提升主版本或次版本时，将补丁号设为 `0`。每个包仍使用标准的 `Name_Version.zip` 文件名。
+
+```powershell
+py -3 publish_mod.py --check  # 构建两份发布包并检查门户版本冲突，不上传
+```
+
+发布包位于 `dist/publish/<源码版本>/2.0/` 和 `2.1/`。FMTK 调用 `publish_mod.py --upload`，分别上传、核对门户 SHA1，并创建及推送两个 `mod-portal-<版本号>` 标签；两者成功后才递增源码版本并推送分支。API key 从 FMTK 的环境变量传入，不写入项目文件。
+
+若中途失败，保持源码不变并再次执行 **Publish Mod**：已上传且目标游戏版本、文件名、SHA1 全部一致的包会跳过。同版本对应不同内容时会停止，需要使用新的版本对。原生 `pack_mod.py --factorio-version both` 仍用于本地兼容性测试，两包沿用相同源码版本号；门户发布使用 `publish_mod.py` 分配不同版本号。
 
 模拟玩家回归与游戏实际运行是不同层次的验证。2.0/2.1 的真实加载、存档迁移和 A/B/C 局域网进退应分别记录；缺少对应游戏版本或联机参与者时，保留为未验证。
 

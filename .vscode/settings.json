@@ -7,5 +7,6 @@
     "**/.trellis/**/info.json": true,
     "**/.codex/**/info.json": true
   },
-  "factorio.package.tagName": "mod-portal-$VERSION"
+  "factorio.package.tagName": "mod-portal-$VERSION",
+  "factorio.package.movedToCommitMessage": "chore: prepare next dual-version release"
 }

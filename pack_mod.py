@@ -37,13 +37,20 @@ def build(source, output_dir, info, target):
     output = output_dir / f"{folder}.zip"
     files = sorted({path for pattern in RELEASE_PATTERNS for path in source.glob(pattern) if path.is_file()})
     manifest = dict(info, factorio_version=target)
+    entries = [(f"{folder}/info.json", (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))]
+    entries.extend((f"{folder}/{path.relative_to(source).as_posix()}", path.read_bytes()) for path in files)
     with tempfile.TemporaryDirectory(dir=output_dir) as temporary:
         staged = Path(temporary) / output.name
         with zipfile.ZipFile(staged, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-            archive.writestr(f"{folder}/info.json", json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
-            for path in files:
-                archive.write(path, f"{folder}/{path.relative_to(source).as_posix()}")
-        staged.replace(output)
+            for name, content in entries:
+                # Stable ZIP metadata lets a retried upload identify the exact same package.
+                entry = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+                entry.create_system = 3
+                entry.external_attr = 0o100644 << 16
+                entry.compress_type = zipfile.ZIP_DEFLATED
+                archive.writestr(entry, content)
+        if not output.is_file() or staged.read_bytes() != output.read_bytes():
+            staged.replace(output)
     return output
 
 

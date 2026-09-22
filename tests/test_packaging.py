@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -7,11 +8,31 @@ import tempfile
 import unittest
 import zipfile
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from pack_mod import build
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class PackagingTests(unittest.TestCase):
+    def test_package_bytes_ignore_source_timestamps(self):
+        info = {"name": "Test_Mod", "version": "0.3.2", "factorio_version": "2.0"}
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)
+            control = source / "control.lua"
+            control.write_bytes(b"-- same runtime\n")
+            output = build(source, source / "first", info, "2.0")
+            first = output.read_bytes()
+            os.utime(output, (1700000000, 1700000000))
+            original_mtime = output.stat().st_mtime_ns
+            build(source, source / "first", info, "2.0")
+            self.assertEqual(output.stat().st_mtime_ns, original_mtime)
+            os.utime(control, (1700000000, 1700000000))
+            self.assertEqual(first, build(source, source / "second", info, "2.0").read_bytes())
+            control.write_bytes(b"-- changed runtime\n")
+            self.assertNotEqual(first, build(source, source / "third", info, "2.0").read_bytes())
+
     def test_both_packages_share_runtime_and_preserve_source(self):
         before = (ROOT / "info.json").read_bytes()
         info = json.loads(before)
