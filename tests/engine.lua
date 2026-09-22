@@ -1,6 +1,6 @@
 -- Installed only into disposable test copies by run_engine.py.
 local validation = {}
-local construction, player_state, deconstruction, gui
+local construction, player_state, deconstruction, gui, core
 
 local function check(value, message)
     assert(value, "FBP_VALIDATION: " .. message)
@@ -76,6 +76,29 @@ local function operations(player)
     gui.destroy_config_gui(player)
     pass("native GUI transitions and shortcuts")
     local state = player_state.get(player.index)
+    local inventory = clear(player)
+    state.active, state.deconstruct_active, state.speed = true, true, 1
+    state.features.auto_place, state.features.auto_upgrade = true, true
+    local mining_target = player.surface.create_entity({name = "wooden-chest", position = {3, 0}, force = player.force})
+    check(mining_target.order_deconstruction(player.force), "shortcut mining target marked")
+    deconstruction.process(player, state, {})
+    check(player.mining_state.mining and state.auto_mining, "automatic mining started")
+    local shortcut = script.get_event_handler(defines.events.on_lua_shortcut)
+    shortcut({player_index = player.index, prototype_name = "fbp-toggle"})
+    check(not state.active and not player.mining_state.mining and not state.auto_mining,
+        "master shortcut stops native mining immediately")
+    check(state.deconstruct_active and state.features.auto_deconstruct, "master pause retains preferences")
+    inventory.insert({name = "wooden-chest", count = 1})
+    local paused_ghost = player.surface.create_entity({name = "entity-ghost", inner_name = "wooden-chest",
+        position = {4, 2}, force = player.force})
+    core.on_tick({tick = game.tick})
+    check(paused_ghost.valid and not player.mining_state.mining, "master off blocks placement and mining restart")
+    shortcut({player_index = player.index, prototype_name = "fbp-toggle"})
+    core.on_tick({tick = game.tick})
+    check(not paused_ghost.valid and player.mining_state.mining, "master shortcut resumes selected groups")
+    shortcut({player_index = player.index, prototype_name = "fbp-toggle"})
+    check(not player.mining_state.mining, "repeated master pause stops mining")
+    pass("native master shortcut pause and resume")
     state.active, state.deconstruct_active = false, false
     state.features.auto_modules, state.features.auto_landfill = true, true
     local surface = player.surface
@@ -165,6 +188,7 @@ function validation.install(phase)
         player_state = require("scripts.player_state")
         deconstruction = require("scripts.deconstruction")
         gui = require("scripts.gui")
+        core = require("scripts.core")
     end
     local previous = script.get_event_handler(defines.events.on_tick)
     local started, finished, mining_stage, target, started_tick = false, false, 0, nil, nil

@@ -84,7 +84,7 @@ function player_state.enforce(player)
         state.features.auto_mine = false
         player_state.stop_mining(player, state)
         if changed then player_state.sync_shortcuts(player, state) end
-    elseif not player_state.can_mine(player) then
+    elseif not state.active or not state.deconstruct_active or not player_state.can_mine(player) then
         player_state.stop_mining(player, state)
     end
     return state, allowed and not editor, reason
@@ -117,8 +117,8 @@ function player_state.set_active(player, key, enabled)
     if key == "deconstruct_active" then
         state.features.auto_deconstruct = enabled
         state.features.auto_mine = enabled
-        if not enabled then player_state.stop_mining(player, state) end
     end
+    if not state.active or not state.deconstruct_active then player_state.stop_mining(player, state) end
     player_state.sync_shortcuts(player, state)
     return state
 end

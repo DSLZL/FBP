@@ -246,6 +246,76 @@ if not multiplayer_only then
         assert(#p.messages > 0)
     end)
 
+    test("printer shortcut pauses every automation group without clearing preferences", function()
+        local handlers = environment({1, 3})
+        local state = storage.players[1]
+        local calls = {[1] = {}, [3] = {}}
+        local function operation(name)
+            return function(p) calls[p.index][#calls[p.index] + 1] = name end
+        end
+        require("scripts.construction").place = operation("place")
+        require("scripts.construction").upgrade = operation("upgrade")
+        require("scripts.deconstruction").process = operation("deconstruct")
+        for _, index in ipairs({1, 3}) do
+            handlers.on_lua_shortcut({player_index = index, prototype_name = "fbp-toggle"})
+            handlers.on_gui_checked_state_changed({player_index = index,
+                element = {valid = true, name = "fbp-feature-auto_deconstruct", state = true}})
+        end
+        state.features.auto_modules = false
+        handlers.on_tick({tick = 1})
+        equal(table.concat(calls[1], ","), "place,upgrade,deconstruct")
+        handlers.on_lua_shortcut({player_index = 1, prototype_name = "fbp-toggle"})
+        equal(state.active, false)
+        equal(game.players[1].shortcuts["fbp-toggle"], false)
+        equal(state.deconstruct_active, true, "keep demolition preference")
+        equal(state.features.auto_deconstruct, true)
+        equal(state.features.auto_modules, false, "keep disabled feature")
+        equal(state.features.auto_landfill, true, "keep enabled feature")
+        handlers.on_tick({tick = 2})
+        equal(#calls[1], 3, "master off pauses all groups")
+        equal(#calls[3], 6, "other player's automation continues")
+        handlers.configuration({})
+        handlers.on_gui_checked_state_changed({player_index = 1,
+            element = {valid = true, name = "fbp-feature-auto_deconstruct", state = true}})
+        handlers.on_tick({tick = 3})
+        equal(#calls[1], 3, "refresh and enabled checkbox cannot bypass master")
+        handlers.on_lua_shortcut({player_index = 1, prototype_name = "fbp-toggle"})
+        handlers.on_tick({tick = 4})
+        equal(table.concat(calls[1], ","), "place,upgrade,deconstruct,place,upgrade,deconstruct")
+        handlers.on_lua_shortcut({player_index = 1, prototype_name = "fbp-deconstruct-toggle"})
+        handlers.on_tick({tick = 5})
+        equal(table.concat(calls[1], ","), "place,upgrade,deconstruct,place,upgrade,deconstruct,place,upgrade")
+    end)
+
+    test("master off immediately stops owned mining but leaves manual mining alone", function()
+        for _, mode in ipairs({"automatic", "manual-other-target", "manual-unowned"}) do
+            local handlers = environment()
+            local p, state = game.players[1], storage.players[1]
+            state.active, state.deconstruct_active = true, true
+            local position = {x = 1, y = 1}
+            if mode ~= "manual-unowned" then
+                state.auto_mining = {surface = p.surface, position = position}
+            end
+            p.mining_state = {mining = true, position = mode == "manual-other-target" and {x = 2, y = 2} or position}
+            handlers.on_lua_shortcut({player_index = 1, prototype_name = "fbp-toggle"})
+            equal(p.mining_state.mining, mode ~= "automatic", mode)
+            equal(state.auto_mining, nil)
+            equal(state.deconstruct_active, true, "pause preserves demolition preference")
+        end
+    end)
+
+    test("refresh stops saved automatic mining when the master is off", function()
+        local handlers = environment()
+        local p, state = game.players[1], storage.players[1]
+        state.active, state.deconstruct_active = false, true
+        state.auto_mining = {surface = p.surface, position = {x = 1, y = 1}}
+        p.mining_state = {mining = true, position = {x = 1, y = 1}}
+        handlers.configuration({})
+        equal(p.mining_state.mining, false)
+        equal(state.auto_mining, nil)
+        equal(state.deconstruct_active, true)
+    end)
+
     test("leave and removal affect only the departing player", function()
         local handlers = environment({1, 3})
         local p, state = game.players[3], storage.players[3]
